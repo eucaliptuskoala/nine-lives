@@ -1,0 +1,38 @@
+# --- Node ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+.venv/
+env/
+
+# --- Build output ---
+dist/
+build/
+
+# --- Environment ---
+.env
+.env.local
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Vite ---
+frontend/dist/
+
+# --- Backend ---
+backend/.env
