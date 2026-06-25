@@ -34,5 +34,8 @@ Thumbs.db
 # --- Vite ---
 frontend/dist/
 
+# --- Notebooks ---
+.ipynb_checkpoints/
+
 # --- Backend ---
 backend/.env
