@@ -13,4 +13,6 @@ dependencies = [
     "pillow>=12.2.0",
     "python-dotenv>=1.2.2",
     "scikit-learn>=1.9.0",
+    "torch>=2.12.1",
+    "transformers>=5.12.1",
 ]
