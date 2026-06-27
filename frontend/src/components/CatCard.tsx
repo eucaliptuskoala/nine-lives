@@ -1,5 +1,74 @@
-function CatCard() {
-  return <div className="border rounded-lg p-4">CatCard</div>;
+import type { Class } from "../types/game";
+import HealthBar from "./HealthBar";
+import ManaBar from "./ManaBar";
+
+interface CatCardProps {
+  name: string;
+  avatarUrl?: string;
+  classType: Class;
+  hp: number;
+  maxHp: number;
+  mana: number;
+  maxMana: number;
+  isDefending?: boolean;
+  shield?: number;
+  flip?: boolean;
+}
+
+const classColors: Record<Class, string> = {
+  STRENGTH: "text-red-400",
+  AGILITY: "text-green-400",
+  INTELLIGENCE: "text-blue-400",
+};
+
+function CatCard({
+  name,
+  classType,
+  hp,
+  maxHp,
+  mana,
+  maxMana,
+  isDefending,
+  shield,
+  flip,
+}: CatCardProps) {
+  return (
+    <div
+      className={`flex items-center gap-4 p-4 rounded-xl bg-gray-800/60 border border-gray-700 ${
+        flip ? "flex-row-reverse" : ""
+      }`}
+    >
+      <div className="w-20 h-20 rounded-full bg-gray-700 flex items-center justify-center text-3xl shrink-0 border-2 border-gray-600">
+        {"\uD83D\uDC31"}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div
+          className={`flex items-center gap-2 mb-1 ${flip ? "justify-end" : ""}`}
+        >
+          <span className="font-semibold text-white truncate">{name}</span>
+          <span className={`text-xs font-medium ${classColors[classType]}`}>
+            {classType}
+          </span>
+        </div>
+        <div className="space-y-1.5">
+          <HealthBar current={hp} max={maxHp} />
+          <ManaBar current={mana} max={maxMana} />
+        </div>
+        <div className={`flex gap-2 mt-1 ${flip ? "justify-end" : ""}`}>
+          {isDefending && (
+            <span className="text-xs text-yellow-400 font-medium">
+              {"\uD83D\uDEE1\uFE0F"} Defending
+            </span>
+          )}
+          {shield !== undefined && shield > 0 && (
+            <span className="text-xs text-cyan-400 font-medium">
+              {"\uD83D\uDEE1\uFE0F"} Shield {shield}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default CatCard;

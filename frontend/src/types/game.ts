@@ -95,6 +95,7 @@ export interface GameState {
   player_max_mana: number;
   player_is_defending: boolean;
   player_shield: number;
+  lives_remaining: number;
   player_ability_cooldowns: Record<string, number>;
   phase: Phase;
   current_round: number;
