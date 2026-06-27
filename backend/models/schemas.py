@@ -55,7 +55,20 @@ class Ability(BaseModel):
     type: AbilityType
     effect: Optional[Effect] = None
     cooldown: int
+    mana_cost: int
     lore: str
+    is_special: bool
+    description: str
+
+
+class EnemyAbility(BaseModel):
+    id: str
+    name: str
+    dmg: int
+    type: AbilityType
+    effect: Optional[Effect] = None
+    mana_cost: int
+    cooldown: int
     is_special: bool
     description: str
 
@@ -68,15 +81,21 @@ class Enemy(BaseModel):
     atk: int
     defence: int
     spd: int
-    ability: str
+    mana: int
+    max_mana: int
+    ability_cooldowns: dict[str, int]
+    abilities: list[EnemyAbility]
     avatar_url: str
 
 
 class GameState(BaseModel):
     player_hp: int
     player_max_hp: int
+    player_mana: int
+    player_max_mana: int
     player_is_defending: bool
-    special_cooldown: int
+    player_shield: int
+    player_ability_cooldowns: dict[str, int]
     phase: Phase
     current_round: int
     enemy: Enemy
@@ -91,6 +110,8 @@ class CreatureBase(BaseModel):
     dmg: int
     defence: int
     spd: int
+    mana: int
+    max_mana: int
     lore: str
     avatar_url: str
     lives_remaining: int

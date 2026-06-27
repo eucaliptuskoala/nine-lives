@@ -21,6 +21,8 @@ CREATE TABLE cat (
     dmg             INT NOT NULL,
     def             INT NOT NULL,
     spd             INT NOT NULL,
+    mana            INT NOT NULL,
+    max_mana        INT NOT NULL,
     lore            TEXT NOT NULL,
     avatar_url      TEXT NOT NULL,
     lives_remaining INT NOT NULL DEFAULT 9,
@@ -52,6 +54,7 @@ CREATE TABLE ability (
     type            ability_type NOT NULL,
     effect          effect,
     cooldown        INT NOT NULL,
+    mana_cost       INT NOT NULL,
     lore            TEXT NOT NULL,
     is_special      BOOLEAN NOT NULL DEFAULT FALSE,
     description     TEXT NOT NULL

@@ -48,11 +48,16 @@ Photo upload
 
 ## Combat Rules
 
-| Action  | Effect                                      |
-|---------|---------------------------------------------|
-| Attack  | damage = atk - def × 0.5 (min 1)           |
-| Defend  | incoming damage halved for one turn         |
-| Special | 2× damage, 3-turn cooldown                  |
+| Action      | Effect                                      | Mana |
+|-------------|---------------------------------------------|------|
+| Attack      | damage = atk − def × 0.5 (min 1)           | 0    |
+| Defend      | incoming damage halved for one turn         | 0    |
+| Ability N   | varies by AbilityType (DMG/HEAL/SHIELD/etc) | cost |
+| Ultimate    | strongest ability (is_special = true)        | high |
+
+- Shield and Defend stack: Defend halves incoming damage, Shield absorbs a flat amount after halving.
+- Each creature regenerates 10% of max_mana at the start of its turn.
+- Basic Attack is always available. Abilities cost mana and have individual cooldowns.
 
 Enemy scaling by round:
 ```
@@ -83,6 +88,8 @@ spd = floor((7  + round * 2) * multiplier)
 | dmg            | int            |                              |
 | def            | int            |                              |
 | spd            | int            |                              |
+| mana           | int            |                              |
+| max_mana       | int            |                              |
 | abilities      | list(Ability)  |                              |
 | lore           | text           |                              |
 | avatar_url     | text           | Gemini generated             |
@@ -118,8 +125,11 @@ spd = floor((7  + round * 2) * multiplier)
 {
   "player_hp": 42,
   "player_max_hp": 50,
+  "player_mana": 80,
+  "player_max_mana": 100,
   "player_is_defending": false,
-  "special_cooldown": 0,
+  "player_shield": 0,
+  "player_ability_cooldowns": { "<ability_id>": 0 },
   "phase": "PLAYER_TURN",
   "current_round": 3,
   "enemy": {
@@ -130,7 +140,12 @@ spd = floor((7  + round * 2) * multiplier)
     "atk": 12,
     "def": 8,
     "spd": 14,
-    "ability": "Shadow Pounce",
+    "mana": 60,
+    "max_mana": 100,
+    "ability_cooldowns": { "<ability_id>": 0 },
+    "abilities": [
+      { "id": "...", "name": "Shadow Pounce", "type": "DMG", "dmg": 8, "mana_cost": 15, "cooldown": 2, "is_special": false }
+    ],
     "avatar_url": "..."
   }
 }
@@ -147,6 +162,7 @@ spd = floor((7  + round * 2) * multiplier)
 | type        | AbilityType |                              |
 | effect      | Effect      | nullable                     |
 | cooldown    | int         |                              |
+| mana_cost   | int         |                              |
 | lore        | text        | short flavour line           |
 | is_special  | bool        |                              |
 | description | text        | what it does mechanically    |
@@ -184,6 +200,7 @@ Procedural only — no LLM per encounter (too slow mid-battle).
 - Name, breed: random from fixed seed-based lists
 - Abilities: 4 random from preset pool, filtered by class affinity (1 must be `is_special = true`)
 - Avatar: CSS/SVG procedural silhouettes or pre-made assets — not Gemini
+- Mana: `max_mana = 80 + round * 5`, starts at 60% of max
 
 LLM is only called once per run: during digitization of the player's cat.
 

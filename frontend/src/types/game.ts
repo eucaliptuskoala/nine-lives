@@ -55,7 +55,20 @@ export interface Ability {
   type: AbilityType;
   effect: Effect | null;
   cooldown: number;
+  mana_cost: number;
   lore: string;
+  is_special: boolean;
+  description: string;
+}
+
+export interface EnemyAbility {
+  id: string;
+  name: string;
+  dmg: number;
+  type: AbilityType;
+  effect: Effect | null;
+  mana_cost: number;
+  cooldown: number;
   is_special: boolean;
   description: string;
 }
@@ -68,15 +81,21 @@ export interface Enemy {
   atk: number;
   def: number;
   spd: number;
-  ability: string;
+  mana: number;
+  max_mana: number;
+  ability_cooldowns: Record<string, number>;
+  abilities: EnemyAbility[];
   avatar_url: string;
 }
 
 export interface GameState {
   player_hp: number;
   player_max_hp: number;
+  player_mana: number;
+  player_max_mana: number;
   player_is_defending: boolean;
-  special_cooldown: number;
+  player_shield: number;
+  player_ability_cooldowns: Record<string, number>;
   phase: Phase;
   current_round: number;
   enemy: Enemy;
@@ -92,6 +111,8 @@ export interface Creature {
   dmg: number;
   defence: number;
   spd: number;
+  mana: number;
+  max_mana: number;
   lore: string;
   avatar_url: string;
   lives_remaining: number;
