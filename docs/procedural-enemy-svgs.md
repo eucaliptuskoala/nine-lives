@@ -55,7 +55,7 @@ A single function `generateEnemySvg(seed: string): string` that:
 
 ### Integration
 
-Replace `enemyGen.ts` — instead of `avatar_url` pointing to a static asset, call the procedural generator and embed the SVG inline or serve it as a data URI.
+In the backend `services/enemy_gen.py`, instead of `avatar_url` pointing to a static asset, call the procedural generator and embed the SVG inline or serve it as a data URI in the `GameState` enemy object.
 
 ### References
 

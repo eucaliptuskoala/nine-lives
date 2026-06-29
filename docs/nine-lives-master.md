@@ -24,8 +24,11 @@ A web app where the user uploads a photo of their cat — real or from the inter
    - Claude Haiku generates name, stats, abilities, lore
    - Gemini 2.5 Flash generates stylized avatar
    - Cat row created and linked to run
-4. Battle begins (status: `IN_PROGRESS`, state populated)
+4. Battle begins — frontend calls `POST /api/battle/start`
+   - Backend builds initial GameState, generates first enemy, persists to DB
 5. Turn-based combat loop (see Combat Rules)
+   - Frontend submits actions via `POST /api/battle/action`
+   - Backend resolves full turn, persists state, returns updated GameState
 6. HP hits 0 → lose 1 life, revive to full HP, continue same fight
 7. Lives hit 0 → run over:
    - `cat.status = MEMORIAL`, set `death_date`
@@ -208,10 +211,12 @@ LLM is only called once per run: during digitization of the player's cat.
 
 ## Mid-Run Persistence
 
-- After every action: `supabase.from('game_run').update({ state }).eq('id', runId)`
-- On page load: fetch `in_progress` run + cat in one query
-- Game loop runs entirely on frontend — no FastAPI involvement
-- FastAPI handles only: digitize pipeline + any heavy AI calls
+- The backend is the sole writer of `game_run.state`
+- After every `POST /api/battle/action`: backend resolves full turn, persists state, then returns response
+- On page load or refresh: frontend calls `POST /api/battle/start` — backend returns the persisted state (idempotent)
+- The frontend has no write access to `game_run.state`
+
+LLM is only called once per run: during digitization of the player's cat.
 
 ---
 
@@ -221,7 +226,7 @@ LLM is only called once per run: during digitization of the player's cat.
 |-------------------------|-----------------------------------|-------------------|
 | Frontend                | React + Vite + TypeScript         | Free              |
 | Styling                 | Tailwind CSS + framer-motion      | Free              |
-| Backend                 | Python FastAPI                    | Free              |
+| Backend                 | Python FastAPI (digitize pipeline + authoritative game loop) | Free |
 | Database + Auth         | Supabase                          | Free tier         |
 | Breed classification    | HuggingFace Inference API         | Free tier         |
 | Fur color extraction    | OpenCV k-means                    | Free (no API)     |
@@ -251,27 +256,28 @@ nine-lives/
 │   │   │   ├── LivesDisplay.tsx
 │   │   │   └── FarewellScreen.tsx
 │   │   ├── hooks/
-│   │   │   ├── useGameState.ts
+│   │   │   ├── useGameState.ts   # thin API wrapper — no combat math
 │   │   │   ├── useMemorial.ts
 │   │   │   └── useSupabase.ts
 │   │   ├── api/
 │   │   │   └── digitize.ts
-│   │   ├── types/
-│   │   │   └── game.ts
-│   │   └── utils/
-│   │       ├── combat.ts
-│   │       └── enemyGen.ts
+│   │   └── types/
+│   │       └── game.ts
 │   ├── index.html
 │   └── vite.config.ts
 ├── backend/
 │   ├── main.py
 │   ├── routers/
-│   │   └── digitize.py
+│   │   ├── digitize.py
+│   │   └── battle.py             # POST /api/battle/start + /action
 │   ├── services/
 │   │   ├── classifier.py       # HuggingFace breed detection
 │   │   ├── color_extractor.py  # OpenCV k-means
 │   │   ├── card_generator.py   # Claude Haiku
-│   │   └── image_generator.py  # Gemini 2.5 Flash
+│   │   ├── image_generator.py  # Gemini 2.5 Flash
+│   │   ├── combat.py           # pure combat calculations
+│   │   ├── enemy_gen.py        # procedural enemy generation
+│   │   └── battle_engine.py    # turn orchestration
 │   └── models/
 │       └── schemas.py
 └── supabase/

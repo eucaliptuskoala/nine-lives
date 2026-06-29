@@ -48,10 +48,10 @@ A web application where the user takes a photo of their cat — real or from the
 | Frontend | React + Vite |
 | Styling | Tailwind CSS |
 | Backend | Python (FastAPI) |
-| ML — breed classification | TensorFlow.js (in browser) or HuggingFace Inference API |
+| ML — breed classification | HuggingFace Inference API |
 | LLM — card generation | Anthropic Claude API (claude-haiku for speed) |
-| Image generation | DALL-E 3 API or Stability AI |
-| Storage | localStorage (MVP) or Supabase (if time allows) |
+| Image generation | Gemini 2.5 Flash |
+| Storage | Supabase (Postgres + Auth + Storage) |
 | Deployment | Vercel (frontend) + Render (backend) |
 
 ---
