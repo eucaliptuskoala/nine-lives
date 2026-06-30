@@ -4,7 +4,7 @@
 
 Nine Lives is a cat digitization roguelike game that transforms user-uploaded cat photos into playable characters through machine learning and AI services. The game features turn-based combat with a 9-lives system, ability-based combat mechanics, and a memorial system for fallen cats.
 
-The system follows a clear separation of concerns: the backend is the authoritative game engine — it owns all combat logic, enemy generation, state mutation, and persistence. The frontend is a rendering and input layer — it displays game state returned by the backend and submits player actions via the Battle API. The frontend has no direct write access to game state in the database.
+The system follows a clear separation of concerns: the backend is the sole owner of all data access. Beyond being the authoritative game engine — owning all combat logic, enemy generation, state mutation, and persistence — the backend also mediates every database read and write. The frontend has no direct database access at all: it neither reads from nor writes to the database. The frontend uses the Supabase client solely for authentication (login, session management, and obtaining the JWT) and performs all data operations through authenticated backend HTTP endpoints. The frontend is a rendering and input layer — it displays data returned by the backend and submits player actions and data requests via authenticated backend endpoints.
 
 This document specifies the functional requirements for the complete implementation including the cat digitization pipeline, the Battle API, the battle system, database integration, and memorial features.
 
@@ -13,6 +13,7 @@ This document specifies the functional requirements for the complete implementat
 - **System**: The Nine Lives game application (frontend + backend + database)
 - **Digitization_Pipeline**: The backend process that transforms cat photos into game characters using ML/AI services
 - **Battle_API**: The backend HTTP API that exposes battle actions to the frontend (`POST /api/battle/start`, `POST /api/battle/action`). All combat logic runs inside this API layer.
+- **Data_API**: The backend HTTP API that mediates all non-battle, non-digitize database access for the frontend (`POST /api/game-runs`, `GET /api/cats/memorial`, `PATCH /api/cats/{cat_id}/note`). Each endpoint requires a valid Auth_Token, verifies it, and enforces ownership against the authenticated user. The frontend uses these endpoints instead of querying or writing the database directly.
 - **Battle_System**: The authoritative turn-based combat engine running on the backend. It handles combat calculations, enemy generation, AI, state mutation, and persistence. The frontend never computes game outcomes directly.
 - **Game_Run**: A single playthrough session from digitization through combat to memorial
 - **Cat**: A playable character generated from a user's uploaded photo with stats, abilities, and lore
@@ -24,8 +25,8 @@ This document specifies the functional requirements for the complete implementat
 - **Memorial**: The final resting place displaying all cats that have exhausted their 9 lives
 - **Game_State**: The complete, authoritative state of an active battle including HP, mana, cooldowns, phase, and enemy data. Owned and persisted exclusively by the Battle_System.
 - **Phase**: The current turn indicator (PLAYER_TURN or ENEMY_TURN)
-- **RLS**: Row Level Security policies that enforce data access permissions
-- **Auth_Token**: A valid Supabase JWT that the frontend includes in every Battle API request. The backend verifies the token and confirms the user owns the game_run before processing any action.
+- **RLS**: Row Level Security policies that act as a defense-in-depth backstop at the database level. Primary data isolation is enforced by the backend API layer using the authenticated user's identity.
+- **Auth_Token**: A valid Supabase JWT that the frontend includes in every backend data and battle request. The frontend obtains the Auth_Token from the Supabase client, which it uses for authentication only. The backend verifies the token and confirms the user owns the requested resource before processing any operation.
 
 ## Requirements
 
@@ -37,7 +38,7 @@ This document specifies the functional requirements for the complete implementat
 
 1. WHEN a user selects an image file, THE System SHALL accept files in JPEG, PNG, or WebP format
 2. WHEN a user selects a file larger than 10MB, THE System SHALL reject the upload and display an error message
-3. WHEN a user uploads a valid file, THE System SHALL create a game_run record with status DIGITIZING
+3. WHEN a user uploads a valid file, THE frontend SHALL call the `POST /api/game-runs` endpoint with a valid Auth_Token, and THE Data_API SHALL create a game_run record with status DIGITIZING and return its run_id
 4. WHEN an upload fails, THE System SHALL display an error message and allow the user to retry
 
 ### Requirement 2: Breed Classification
@@ -301,11 +302,12 @@ This document specifies the functional requirements for the complete implementat
 
 #### Acceptance Criteria
 
-1. WHEN the Memorial Page loads, THE System SHALL query all cats with status MEMORIAL that belong to the current user
-2. WHEN memorial cats are loaded, THE System SHALL display each cat's name, breed, class, stats, abilities, lore, and avatar
-3. WHEN memorial cats are loaded, THE System SHALL display the death_date for each cat
-4. WHEN memorial cats are loaded, THE System SHALL display the wins counter for each cat
-5. WHEN memorial cats are loaded, THE System SHALL display the personal_note if one exists
+1. WHEN the Memorial Page loads, THE frontend SHALL call the `GET /api/cats/memorial` endpoint with a valid Auth_Token to retrieve the cats, and THE Data_API SHALL return all cats with status MEMORIAL that belong to the authenticated user
+2. WHEN memorial cats are returned, THE System SHALL display each cat's name, breed, class, stats, abilities, lore, and avatar
+3. WHEN memorial cats are returned, THE System SHALL display the death_date for each cat
+4. WHEN memorial cats are returned, THE System SHALL display the wins counter for each cat
+5. WHEN memorial cats are returned, THE System SHALL display the personal_note if one exists
+6. THE frontend SHALL NOT query the database directly for memorial cats; memorial data is always supplied by the Data_API response
 
 ### Requirement 23: Personal Notes
 
@@ -314,8 +316,10 @@ This document specifies the functional requirements for the complete implementat
 #### Acceptance Criteria
 
 1. WHEN viewing a cat in the memorial, THE System SHALL provide an interface to add or edit a personal note
-2. WHEN a user saves a personal note, THE System SHALL update the cat record with the note text
-3. WHEN a personal note exceeds 500 characters, THE System SHALL reject the update and display an error message
+2. WHEN a user saves a personal note, THE frontend SHALL call the `PATCH /api/cats/{cat_id}/note` endpoint with a valid Auth_Token, and THE Data_API SHALL verify the authenticated user owns the cat and update the cat record with the note text
+3. IF the authenticated user does not own the cat identified by cat_id, THEN THE Data_API SHALL reject the update with a 403 Forbidden response
+4. IF a personal note exceeds 500 characters, THEN THE Data_API SHALL reject the update with an error response, and THE frontend SHALL display an error message
+5. THE frontend SHALL NOT update the cat record in the database directly; note updates are always performed by the Data_API
 
 ### Requirement 24: Data Isolation
 
@@ -323,9 +327,11 @@ This document specifies the functional requirements for the complete implementat
 
 #### Acceptance Criteria
 
-1. WHEN a user queries for cats, THE System SHALL only return cats where the user_id matches the authenticated user's ID
-2. WHEN a user attempts to access a cat belonging to another user, THE System SHALL deny access via RLS policies
-3. WHEN a user queries for game_runs, THE System SHALL only return game_runs associated with the user's cats
+1. WHEN the frontend requests cats through the Data_API, THE Data_API SHALL only return cats where the user_id matches the authenticated user's ID extracted from the verified Auth_Token
+2. WHEN a request targets a cat or game_run that does not belong to the authenticated user, THE backend API layer SHALL deny access by returning a 403 Forbidden response
+3. WHEN the frontend requests game_runs through the backend, THE backend SHALL only return game_runs associated with the authenticated user's cats
+4. THE backend API layer SHALL be the primary enforcement point for data isolation, verifying resource ownership against the authenticated user before any read or write
+5. THE System SHALL configure RLS policies as a defense-in-depth backstop at the database level
 
 ### Requirement 25: Authentication
 

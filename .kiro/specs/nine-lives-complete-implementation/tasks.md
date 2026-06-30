@@ -8,7 +8,7 @@ This implementation plan covers the complete Nine Lives game. The work is split 
 
 **Track B — Digitization Pipeline (pending research):** HuggingFace breed classification, OpenCV color extraction, Claude Haiku card generation, and Gemini 2.5 Flash avatar generation. Blocked until ML research is complete. Plugs into the existing `/api/digitize` endpoint once ready.
 
-**Architecture principle:** The backend is the sole owner of combat logic and game state. The frontend is a rendering and input layer only.
+**Architecture principle:** The backend is the sole owner of all data access. Beyond owning all combat logic and game state, the backend mediates every database read and write. The frontend never reads from or writes to the database directly — it uses the Supabase client solely for authentication (login, session, JWT) and performs all data operations (game_run creation, memorial reads, note updates, battle state) through authenticated backend HTTP endpoints. The frontend is a rendering and input layer only.
 
 ## Tasks
 
@@ -43,31 +43,48 @@ This implementation plan covers the complete Nine Lives game. The work is split 
 ---
 
 - [ ] 3. Authentication
-  - [ ] 3.1 Set up Supabase auth client on the frontend
+  - [x] 3.1 Set up Supabase auth client on the frontend
     - Update `hooks/useSupabase.ts` — initialize Supabase client from env vars (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`)
     - Implement `onAuthStateChange` listener to track session
     - Expose current `user` and `session` from the hook
     - _Requirements: 25.1, 25.2, 25.3, 25.4_
 
-  - [ ] 3.2 Add auth guard for protected pages
+  - [ ] 3.2 Build the login/signup page (email + password)
+    - Create a `LoginPage` component (`frontend/src/pages/LoginPage.tsx`) with an email + password sign-in form and a sign-up form (toggle between the two views, or render them as separate views)
+    - Implement email/password auth via Supabase: sign up with `supabase.auth.signUp({ email, password })` and sign in with `supabase.auth.signInWithPassword({ email, password })`
+    - Implement sign-out via `supabase.auth.signOut()`
+    - Display auth errors to the user (invalid credentials, email already registered, weak password, etc.)
+    - Add a `/login` route in `frontend/src/App.tsx`
+    - On successful login, redirect to the originally intended destination (works together with the `AuthGuard` from task 3.3)
+    - _Requirements: 25.1, 25.2, 25.3, 25.4_
+
+  - [ ] 3.3 Add auth guard for protected pages
     - Create an `AuthGuard` wrapper component (or HOC) that checks for a valid session
     - Wrap DigitizePage, BattlePage, and MemorialPage with the guard
-    - Redirect unauthenticated users to a login page (or Supabase hosted auth UI)
+    - Redirect unauthenticated users to the `/login` route (the custom email/password login page from task 3.2)
     - Preserve the intended destination URL for post-login redirect
     - _Requirements: 25.1, 25.2, 25.3, 25.4_
 
-  - [ ] 3.3 Thread auth token into all backend API calls
-    - Ensure `POST /api/digitize`, `POST /api/battle/start`, and `POST /api/battle/action` include the Supabase JWT in the `Authorization: Bearer <token>` header
-    - Extract token from the active session via `supabase.auth.getSession()`
-    - _Requirements: 21.1, 21.2_
+  - [ ] 3.4 Add a shared authenticated-fetch mechanism and thread it into the endpoints that require auth
+    - Create a single shared authenticated-fetch helper/wrapper (e.g. `frontend/src/api/authFetch.ts`) that pulls the JWT from the active session via `supabase.auth.getSession()` and sets the `Authorization: Bearer <token>` header on each request
+    - Apply this mechanism to the Battle API calls that REQUIRE auth: `POST /api/battle/start` and `POST /api/battle/action`
+    - Apply this mechanism to the new Data API calls that REQUIRE auth: `POST /api/game-runs`, `GET /api/cats/memorial`, and `PATCH /api/cats/{cat_id}/note`
+    - `POST /api/digitize` does NOT require the token for now because it remains an open mock endpoint — digitize is intentionally excluded from required auth. The shared fetch helper MAY be reused for it later when the real ML pipeline is secured, but no token is required at this stage
+    - _Requirements: 21.1, 21.2, 24.1_
 
-  - [ ] 3.4 Implement JWT verification on the backend
+  - [ ] 3.5 Implement JWT verification on the backend
     - In `main.py`, add a dependency or middleware that extracts and verifies the Supabase JWT on all `/api/battle/*` routes
     - Use `supabase-py` to verify the token and extract `user_id`
     - Return 401 if token is missing or invalid
     - _Requirements: 21.1, 21.2_
 
-- [ ] 4. Backend battle engine
+  - [ ] 3.6 Add sign-out control
+    - Add a sign-out UI control (e.g. a button in a shared header/nav) shown on the authenticated pages — DigitizePage, BattlePage, and MemorialPage
+    - On click, call `supabase.auth.signOut()`, clear the local session/user state, and redirect the user to `/login`
+    - Ensure the `onAuthStateChange` listener from task 3.1 reacts to sign-out so the `AuthGuard` (task 3.3) immediately treats the user as unauthenticated
+    - _Requirements: 25.4_
+
+- [ ] 4. Backend battle engine and Data Router
   - [ ] 4.1 Create `services/combat.py` — pure combat calculation functions (no DB access)
     - `calculate_damage(atk: int, def_: int, is_defending: bool, shield: int) -> tuple[int, int]`
       - `raw = max(atk - def_*0.5, 1)`; if defending: `raw = floor(raw*0.5)`; return `(floor(raw - min(shield, raw)), shield - min(shield, raw))`
@@ -146,6 +163,34 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     - Action when phase is not PLAYER_TURN returns error
     - _Requirements: 7, 9, 10, 11, 20.5, 21_
 
+  - [ ] 4.8 Create `routers/data.py` and add data request/response models to `models/schemas.py`
+    - Add to `models/schemas.py`:
+      - `CreateGameRunResponse(run_id: str, status: GameStatus)` — status is always DIGITIZING on creation
+      - `UpdateNoteRequest(note: str)` — max 500 chars, validated server-side
+    - Implement `POST /api/game-runs`:
+      - Reuse the auth dependency from task 3.5 to verify the Supabase JWT → 401 if missing/invalid
+      - Insert a new `game_run` for the authenticated user with `status=DIGITIZING`, `cat_id=null`, `current_round=0`, `state=null`
+      - Return the new `run_id` and status
+    - Implement `GET /api/cats/memorial`:
+      - Verify the Supabase JWT (reuse the auth dependency from task 3.5) → 401 if missing/invalid
+      - Query `cat` rows WHERE `user_id = authenticated user` AND `status=MEMORIAL` (including their abilities), ordered by `death_date` descending
+      - Return the list of cats
+    - Implement `PATCH /api/cats/{cat_id}/note`:
+      - Verify the Supabase JWT (reuse the auth dependency from task 3.5) → 401 if missing/invalid
+      - Confirm the cat identified by `cat_id` belongs to the authenticated user → 403 if not owner
+      - Validate `note` length ≤ 500 chars → 400 (with error message) if exceeded
+      - Update the cat's `personal_note`; return the updated cat
+    - Register the router in `main.py` with prefix `/api`
+    - _Requirements: 1.3, 22.1, 23.1, 23.2, 23.3, 23.4, 24.1, 24.2, 24.3, 24.4_
+
+  - [ ]* 4.9 Write unit tests for `routers/data.py` (pytest, mock Supabase)
+    - All three endpoints return 401 when the Authorization header is missing or invalid
+    - `PATCH /api/cats/{cat_id}/note` returns 403 when the cat belongs to a different user
+    - `PATCH /api/cats/{cat_id}/note` returns 400 when the note exceeds 500 chars
+    - `GET /api/cats/memorial` returns only the authenticated user's MEMORIAL cats
+    - `POST /api/game-runs` inserts a DIGITIZING game_run for the authenticated user and returns its run_id
+    - _Requirements: 1.3, 22.1, 23.2, 23.3, 23.4, 24.1_
+
 - [ ] 5. Frontend wiring — connect battle UI to Battle API
   - [ ] 5.1 Gut and replace `hooks/useGameState.ts`
     - Remove all combat math: delete imports of `combat.ts`, `enemyGen.ts`; remove `initRound`, `attack`, `defend`, `useAbility`, `resolveEnemyTurn`
@@ -186,25 +231,27 @@ This implementation plan covers the complete Nine Lives game. The work is split 
 - [ ] 6. Update DigitizePage to create a game run and launch a battle
   - [ ] 6.1 Wire up DigitizePage for mock-based flow (no ML yet)
     - Implement file selection with client-side validation (type + size display, but upload not yet wired to real pipeline)
-    - On submit: create a `game_run` record (status DIGITIZING) via Supabase client
-    - Call `POST /api/digitize` with file, game_run_id, user_id, auth token — still uses the existing random-stat mock implementation
+    - On submit: create the `game_run` (status DIGITIZING) by calling the backend `POST /api/game-runs` endpoint with the auth token — **not** via a direct Supabase insert; use the returned `run_id`
+    - Call `POST /api/digitize` with file, game_run_id, user_id, auth token — still uses the existing random-stat mock implementation (digitize stays a mock and is not changed here)
     - On success: navigate to `/battle/:runId`
     - Display processing state and handle errors with retry
+    - The frontend must NOT insert into Supabase directly; the Supabase client is used only for the auth token/session
     - _Requirements: 1.1–1.4, 7.1, 26.1, 26.2, 27.1–27.4_
 
 - [ ] 7. Memorial system
   - [ ] 7.1 Update MemorialPage to load and display fallen cats
-    - Query all cats with status=MEMORIAL for current user (via Supabase, RLS-filtered)
+    - Load all fallen cats (status=MEMORIAL) for the current user via the backend `GET /api/cats/memorial` endpoint (with auth token) — **not** via a direct Supabase query
     - Display: name, breed, class, avatar, stats, abilities, lore, death_date, wins, personal_note
-    - Implement UI for adding/editing personal notes; validate ≤500 chars
+    - Implement UI for adding/editing personal notes; on save call the backend `PATCH /api/cats/{cat_id}/note` endpoint (with auth token); validate ≤500 chars client-side (authoritative validation is server-side)
     - Handle empty state
-    - _Requirements: 22.1–22.5, 23.1–23.3_
+    - _Requirements: 22.1–22.5, 23.1–23.3, 24.1_
 
   - [ ] 7.2 Implement `hooks/useMemorial.ts`
-    - Load memorial cats from Supabase (status=MEMORIAL, own cats only)
-    - `updateNote(catId, note)` — validate ≤500 chars, update DB
+    - Load memorial cats via `GET /api/cats/memorial` (with auth token) — no direct Supabase reads
+    - `updateNote(catId, note)` — client-side ≤500 char pre-check, then call `PATCH /api/cats/{cat_id}/note` (with auth token); authoritative validation is server-side — no direct Supabase writes
+    - The Supabase client is used only for obtaining the auth token/session
     - `loading` and `error` states
-    - _Requirements: 22.1, 22.2, 23.1–23.3_
+    - _Requirements: 22.1, 22.2, 23.1–23.3, 24.1_
 
   - [ ]* 7.3 Write integration test for memorial
     - Load cats, add/edit notes, 500-char limit, empty state display
@@ -320,6 +367,7 @@ This implementation plan covers the complete Nine Lives game. The work is split 
 - TypeScript frontend, Python (FastAPI) backend
 - **Track A is fully independent of Track B** — the game is playable end-to-end using the existing random stat mock in `/api/digitize` while ML research continues
 - The backend is the sole owner of combat logic and game state; the frontend never computes damage, generates enemies, or writes to `game_run.state` directly
+- The frontend uses the Supabase client **only for authentication** (obtaining the JWT/session); all data access — game_run creation, memorial reads, and note updates — goes through the authenticated backend Data Router (`routers/data.py`), never via direct Supabase reads/writes
 - Task 5.3 (deleting `combat.ts` and `enemyGen.ts`) must be the last step in Task 5
 
 ## Task Dependency Graph
@@ -329,20 +377,21 @@ This implementation plan covers the complete Nine Lives game. The work is split 
   "waves": [
     { "id": 0, "tasks": ["1.1", "1.2", "1.3"] },
     { "id": 1, "tasks": ["2"] },
-    { "id": 2, "tasks": ["3.1", "3.2"] },
-    { "id": 3, "tasks": ["3.3", "3.4"] },
-    { "id": 4, "tasks": ["4.1", "4.3"] },
-    { "id": 5, "tasks": ["4.2", "4.4", "4.5"] },
-    { "id": 6, "tasks": ["4.6"] },
-    { "id": 7, "tasks": ["4.7", "5.1"] },
-    { "id": 8, "tasks": ["5.2"] },
-    { "id": 9, "tasks": ["5.3", "5.4", "6.1"] },
-    { "id": 10, "tasks": ["7.1", "7.2", "8.1", "8.2"] },
-    { "id": 11, "tasks": ["7.3", "9.1", "9.2", "9.3"] },
-    { "id": 12, "tasks": ["9.4", "10"] },
-    { "id": 13, "tasks": ["11.1", "11.3", "11.5", "11.7"] },
-    { "id": 14, "tasks": ["11.2", "11.4", "11.6", "11.8", "12.1"] },
-    { "id": 15, "tasks": ["12.2", "12.3", "13"] }
+    { "id": 2, "tasks": ["3.1"] },
+    { "id": 3, "tasks": ["3.2", "3.4", "3.5"] },
+    { "id": 4, "tasks": ["3.3"] },
+    { "id": 5, "tasks": ["3.6", "4.1", "4.3"] },
+    { "id": 6, "tasks": ["4.2", "4.4", "4.5"] },
+    { "id": 7, "tasks": ["4.6"] },
+    { "id": 8, "tasks": ["4.7", "4.8", "5.1"] },
+    { "id": 9, "tasks": ["4.9", "5.2"] },
+    { "id": 10, "tasks": ["5.3", "5.4", "6.1"] },
+    { "id": 11, "tasks": ["7.1", "7.2", "8.1", "8.2"] },
+    { "id": 12, "tasks": ["7.3", "9.1", "9.2", "9.3"] },
+    { "id": 13, "tasks": ["9.4", "10"] },
+    { "id": 14, "tasks": ["11.1", "11.3", "11.5", "11.7"] },
+    { "id": 15, "tasks": ["11.2", "11.4", "11.6", "11.8", "12.1"] },
+    { "id": 16, "tasks": ["12.2", "12.3", "13"] }
   ]
 }
 ```

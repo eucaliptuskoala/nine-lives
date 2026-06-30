@@ -4,7 +4,7 @@
 
 Nine Lives is a cat digitization roguelike game where users upload cat photos that are transformed into playable characters through ML/AI processing. The game features turn-based combat with a 9-lives system, culminating in a memorial for fallen cats. This design covers the complete implementation of: (1) Cat Digitization Pipeline using HuggingFace, OpenCV, Claude Haiku, and Gemini 2.5 Flash, (2) Supabase database integration with RLS policies, (3) Battle system with abilities, mana, cooldowns, and enemy AI, (4) Memorial system for fallen cats, and (5) Complete game flow integration.
 
-**Architecture principle:** The backend is the authoritative game engine. All combat calculations, enemy generation, state mutations, and persistence happen exclusively on the backend. The frontend is a rendering and input layer — it submits player actions via the Battle API and renders the `GameState` returned in the response. The frontend has no direct write access to game state in the database and performs no combat math.
+**Architecture principle:** The backend is the sole owner of all data access. Beyond being the authoritative game engine (all combat calculations, enemy generation, state mutations, and persistence happen exclusively on the backend), the backend also mediates **every** database read and write. The frontend never reads from or writes to the database directly. It uses the Supabase client solely for authentication — login, session management, and obtaining the JWT — and calls authenticated backend HTTP endpoints for all data operations (memorial cats, personal notes, game_run creation, battle state). The frontend is a rendering and input layer: it submits player actions and data requests via authenticated backend endpoints and renders the data returned in the response. It has no direct database access and performs no combat math.
 
 **Current State:** Design docs complete, frontend battle loop partially working with mock data, backend skeleton exists with empty service files.
 
@@ -24,6 +24,9 @@ graph TB
     subgraph "Backend - FastAPI"
         API[API Router]
         DigitizeEndpoint[POST /api/digitize]
+        GameRunsEndpoint[POST /api/game-runs]
+        MemorialEndpoint[GET /api/cats/memorial]
+        NoteEndpoint[PATCH /api/cats/:id/note]
         BattleStart[POST /api/battle/start]
         BattleAction[POST /api/battle/action]
         Classifier[Breed Classifier]
@@ -52,9 +55,15 @@ graph TB
     UI --> MemorialPage
 
     DigitizePage --> DigitizeEndpoint
+    DigitizePage --> GameRunsEndpoint
     BattlePage --> BattleStart
     BattlePage --> BattleAction
-    MemorialPage --> DB
+    MemorialPage --> MemorialEndpoint
+    MemorialPage --> NoteEndpoint
+
+    GameRunsEndpoint --> DB
+    MemorialEndpoint --> DB
+    NoteEndpoint --> DB
 
     BattleStart --> CombatService
     BattleStart --> EnemyGen
@@ -94,7 +103,10 @@ sequenceDiagram
     participant M as Memorial
 
     U->>D: Upload cat photo
-    D->>S: Create game_run (DIGITIZING)
+    D->>B: POST /api/game-runs (create run, DIGITIZING)
+    B->>S: Insert game_run (DIGITIZING)
+    S-->>B: run_id
+    B-->>D: run_id
     D->>B: POST /api/digitize
     B->>ML: Classify breed (HuggingFace)
     ML-->>B: breed name
@@ -167,10 +179,12 @@ interface DigitizePageState {
 **Responsibilities**:
 
 - Accept cat photo file upload
-- Create game_run with status DIGITIZING
+- Create game_run with status DIGITIZING by calling the backend `POST /api/game-runs` endpoint (with auth token) — **not** via a direct Supabase insert
 - Call backend /api/digitize endpoint
 - Display processing status to user
 - Navigate to BattlePage on completion
+
+**Note**: DigitizePage uses the Supabase client only to obtain the auth token/session. All database writes (game_run creation) go through authenticated backend endpoints.
 
 #### 2. BattlePage
 
@@ -205,10 +219,12 @@ interface MemorialPageState {
 
 **Responsibilities**:
 
-- Load all user's cats with status MEMORIAL
+- Load all user's cats with status MEMORIAL via the backend `GET /api/cats/memorial` endpoint (with auth token) — **not** via a direct Supabase query
 - Display cat cards with stats, lore, death date
-- Allow user to add/edit personal notes
+- Allow user to add/edit personal notes by calling the backend `PATCH /api/cats/{cat_id}/note` endpoint — **not** via a direct Supabase update
 - Show lifetime wins/rounds survived
+
+**Note**: MemorialPage uses the Supabase client only for the auth token/session. All memorial reads and note updates go through authenticated backend endpoints.
 
 #### 4. useGameState Hook
 
@@ -242,6 +258,37 @@ function useGameState(): UseGameStateReturn
 - All combat math (`attack`, `defend`, `useAbility`, `resolveEnemyTurn`, `initRound`)
 - Direct Supabase writes
 - Imports of `combat.ts` and `enemyGen.ts`
+
+#### 4b. useMemorial Hook
+
+**Purpose**: Loads memorial cats and updates personal notes via the backend API. Contains no direct Supabase database access.
+
+**Interface**:
+
+```typescript
+interface UseMemorialReturn {
+  cats: Cat[];
+  loading: boolean;
+  error: string | null;
+  updateNote: (catId: string, note: string) => Promise<void>;
+}
+
+function useMemorial(): UseMemorialReturn
+```
+
+**Responsibilities**:
+
+- On mount: fetch the authenticated user's MEMORIAL cats via `GET /api/cats/memorial` (with auth token) — **not** via a direct `supabase.from("cat").select(...)` query
+- `updateNote(catId, note)`: validate ≤500 chars client-side, then call `PATCH /api/cats/{cat_id}/note` (with auth token) — **not** via a direct Supabase update
+- Expose `loading` and `error` for the UI
+
+**Changed (compared to old implementation)**:
+
+- Replaces the direct Supabase `cat` table query with a call to `GET /api/cats/memorial`
+- Replaces the direct Supabase note update with a call to `PATCH /api/cats/{cat_id}/note`
+- The Supabase client is used only for obtaining the auth token/session
+
+**Note**: The `useGameState` hook already routes all data access through the Battle API and is unchanged by this decision. The frontend Supabase client is **auth-only** across the whole app — it is never used for direct database reads or writes.
 
 ### Deleted Frontend Files
 
@@ -290,6 +337,59 @@ async def submit_action(body: BattleActionRequest, user: AuthUser) -> BattleActi
 5. Generate enemy for round 1 via `enemy_gen.generate_enemy(1)`
 6. Persist `GameState` to `game_run.state`, set `game_run.status = IN_PROGRESS`
 7. Return `BattleStateResponse`
+
+
+#### 5b. Data Router (`routers/data.py`)
+
+**Purpose**: Mediate all non-battle, non-digitize database access for the frontend. These endpoints replace what were previously direct Supabase reads/writes from frontend pages and hooks. Every endpoint requires a valid Supabase JWT in the `Authorization` header, verifies the token, and enforces ownership against the authenticated user — consistent with the Battle API auth approach. The backend uses the Supabase service key for the actual queries.
+
+**Interface**:
+
+```python
+@router.post("/api/game-runs")
+async def create_game_run(user: AuthUser) -> CreateGameRunResponse
+
+@router.get("/api/cats/memorial")
+async def list_memorial_cats(user: AuthUser) -> list[Cat]
+
+@router.patch("/api/cats/{cat_id}/note")
+async def update_cat_note(cat_id: str, body: UpdateNoteRequest, user: AuthUser) -> Cat
+```
+
+**Request/Response models** (added to `models/schemas.py`):
+
+```python
+class CreateGameRunResponse(BaseModel):
+    run_id: str
+    status: GameStatus  # always DIGITIZING on creation
+
+class UpdateNoteRequest(BaseModel):
+    note: str  # max 500 chars; validated server-side
+```
+
+**`POST /api/game-runs`** — Replaces the frontend's former direct Supabase `game_run` insert.
+
+1. Verify auth token → 401 if missing/invalid
+2. Insert a new `game_run` row for the authenticated user with `status = DIGITIZING`, `cat_id = null`, `current_round = 0`, `state = null`
+3. Return the new `run_id` and status
+4. _Requirements: 1.3, 24.3_
+
+**`GET /api/cats/memorial`** — Replaces the frontend's former direct `cat` table query in `useMemorial.ts`.
+
+1. Verify auth token → 401 if missing/invalid
+2. Query `cat` rows WHERE `user_id = authenticated user` AND `status = MEMORIAL`, ordered by `death_date` descending
+3. Return the list of cats (with their abilities)
+4. _Requirements: 22.1, 24.1_
+
+**`PATCH /api/cats/{cat_id}/note`** — Replaces the frontend's former direct Supabase note update.
+
+1. Verify auth token → 401 if missing/invalid
+2. Confirm the cat identified by `cat_id` belongs to the authenticated user → 403 if not
+3. Validate `note` length ≤ 500 chars → 400 (with error message) if exceeded
+4. Update the cat's `personal_note`; return the updated cat
+5. _Requirements: 23.1, 23.2, 23.3, 24.1_
+
+**Note**: Ownership is enforced in this API layer using the authenticated user's id (extracted from the verified JWT), with RLS acting as a defense-in-depth backstop at the database level.
 
 
 #### 6. Combat Service (`services/combat.py`)
@@ -605,123 +705,123 @@ class BattleStateResponse(BaseModel):
 
 ### Property 1: Image File Validation
 For any file selected for upload, the system SHALL accept the file if and only if the file extension is .jpg, .jpeg, .png, or .webp.
-Validates: Requirements 1.1, 27.1
+**Validates: Requirements 1.1, 27.1**
 
 ### Property 2: Hex Color Format
 For any colors extracted from cat photos, each color SHALL be a valid hex string matching #[0-9A-Fa-f]{6}.
-Validates: Requirements 3.2
+**Validates: Requirements 3.2**
 
 ### Property 3: Card Generation Schema Completeness
 For any generated cat card, the output SHALL contain all required fields: name, class, max_hp, dmg, defence, spd, max_mana, exactly 4 abilities, lore, and image_prompt.
-Validates: Requirements 4.2, 4.3, 31.1, 31.2
+**Validates: Requirements 4.2, 4.3, 31.1, 31.2**
 
 ### Property 4: Generated Stats Within Bounds
 For any generated cat, all stats SHALL fall within ranges: max_hp ∈ [30,200], dmg ∈ [5,50], defence ∈ [3,40], spd ∈ [5,50], max_mana ∈ [50,200], ability mana_cost ∈ [0,100], ability cooldown ∈ [0,5].
-Validates: Requirements 4.4–4.10
+**Validates: Requirements 4.4, 4.5, 4.6, 4.7, 4.8, 4.9, 4.10**
 
 ### Property 5: Cat Data Serialization Round-Trip
 For any valid Cat object, serializing to JSON then deserializing back SHALL produce an equivalent Cat object.
-Validates: Requirements 6.2, 30.1, 30.2, 30.3
+**Validates: Requirements 6.2, 30.1, 30.2, 30.3**
 
 ### Property 6: Enemy Stat Scaling Formula
 For any round ≥ 1, the Battle_System SHALL compute enemy stats using: multiplier = 1 + (round-1)*0.3, hp = floor((20+round*5)*m), atk = floor((8+round*2)*m), def = floor((6+round*1.5)*m), spd = floor((7+round*2)*m), max_mana = 80+round*5.
-Validates: Requirements 8.1–8.6
+**Validates: Requirements 8.1, 8.2, 8.3, 8.4, 8.5, 8.6**
 
 ### Property 7: Enemy Structure Invariant
 For any enemy generated by the Battle_System, the enemy SHALL have exactly 4 abilities with exactly 1 marked is_special=true.
-Validates: Requirements 8.8
+**Validates: Requirements 8.8**
 
 ### Property 8: Basic Attack Damage Formula
 For any attacker_dmg and defender_defence, the Battle_System SHALL compute damage = max(atk - def*0.5, 1), guaranteeing minimum 1.
-Validates: Requirements 9.2, 9.3, 28.1, 28.2
+**Validates: Requirements 9.2, 9.3, 28.1, 28.2**
 
 ### Property 9: Damage Application to HP
 For any initial HP and damage, after the Battle_System applies damage: new_hp = max(0, initial_hp - damage).
-Validates: Requirements 9.4
+**Validates: Requirements 9.4**
 
 ### Property 10: Defend Damage Reduction
 When defending, the Battle_System SHALL reduce effective damage to exactly floor(incoming * 0.5).
-Validates: Requirements 10.3, 28.3
+**Validates: Requirements 10.3, 28.3**
 
 ### Property 11: Ability Mana Requirement
 The Battle_System SHALL allow an ability if and only if player_mana >= ability.mana_cost AND cooldown = 0.
-Validates: Requirements 11.2, 11.3, 11.9
+**Validates: Requirements 11.2, 11.3, 11.9**
 
 ### Property 12: Ability Mana Consumption
 For any ability use: new_mana = old_mana - ability.mana_cost.
-Validates: Requirements 11.4
+**Validates: Requirements 11.4**
 
 ### Property 13: Ability Cooldown Reset
 For any ability use, the Battle_System SHALL set cooldown to its maximum value immediately after use.
-Validates: Requirements 11.5
+**Validates: Requirements 11.5**
 
 ### Property 14: Ability Damage Direct Application
 For any DMG-type ability, the Battle_System SHALL apply damage directly without defence reduction.
-Validates: Requirements 11.6, 28.4
+**Validates: Requirements 11.6, 28.4**
 
 ### Property 15: Heal HP Bounds
 For any heal: new_hp = min(max_hp, current_hp + heal_value).
-Validates: Requirements 11.7, 16.3
+**Validates: Requirements 11.7, 16.3**
 
 ### Property 16: Shield Addition
 For any SHIELD ability: new_shield = old_shield + ability.value.
-Validates: Requirements 11.8
+**Validates: Requirements 11.8**
 
 ### Property 17: Mana Regeneration Formula
 At turn start, the Battle_System SHALL add floor(max_mana * 0.1) to mana without exceeding max_mana.
-Validates: Requirements 12.1–12.4
+**Validates: Requirements 12.1, 12.2, 12.3, 12.4**
 
 ### Property 18: Cooldown Decrement
 For any cooldown > 0, the Battle_System SHALL decrement by 1 each turn: new = max(0, old - 1).
-Validates: Requirements 13.1–13.3
+**Validates: Requirements 13.1, 13.2, 13.3**
 
 ### Property 19: Shield Damage Absorption Priority
 The Battle_System SHALL first reduce shield by min(shield, damage), then apply remainder to HP.
-Validates: Requirements 14.1–14.3
+**Validates: Requirements 14.1, 14.2, 14.3**
 
 ### Property 20: Defend and Shield Interaction Order
 When both defending and shielded, the Battle_System SHALL apply defend reduction (50%) first, then shield absorption.
-Validates: Requirements 14.4
+**Validates: Requirements 14.4**
 
 ### Property 21: Combat Mechanics Symmetry
 The Battle_System SHALL apply the same formulas for player and enemy actions.
-Validates: Requirements 15.5, 15.6
+**Validates: Requirements 15.5, 15.6**
 
 ### Property 22: HP Bounds Invariant
 At any point, the Battle_System SHALL ensure 0 ≤ current_hp ≤ max_hp for all creatures.
-Validates: Requirements 16.1, 16.2, 29.1
+**Validates: Requirements 16.1, 16.2, 29.1**
 
 ### Property 23: Life Decrement and Revival
 When player HP = 0 and lives_remaining > 0, the Battle_System SHALL decrement lives by 1, restore HP to max, restore mana to max, reset shield to 0.
-Validates: Requirements 17.1–17.4
+**Validates: Requirements 17.1, 17.2, 17.3, 17.4**
 
 ### Property 24: Win Counter Increment
 For any enemy defeat, the Battle_System SHALL increment cat wins by exactly 1.
-Validates: Requirements 19.1
+**Validates: Requirements 19.1**
 
 ### Property 25: Round Progression
 When enemy is defeated, current_round SHALL increment by 1 and a new enemy SHALL be generated server-side.
-Validates: Requirements 19.2, 19.3
+**Validates: Requirements 19.2, 19.3**
 
 ### Property 26: Player State Preservation Across Rounds
 Player HP, mana, and cooldowns SHALL remain unchanged when transitioning to a new round.
-Validates: Requirements 19.4
+**Validates: Requirements 19.4**
 
 ### Property 27: Game State Serialization Round-Trip
 Persisting a GameState to the DB then loading it back SHALL produce an equivalent object.
-Validates: Requirements 20.1
+**Validates: Requirements 20.1**
 
 ### Property 28: Mana Bounds Invariant
 At any point, the Battle_System SHALL ensure 0 ≤ current_mana ≤ max_mana.
-Validates: Requirements 29.2
+**Validates: Requirements 29.2**
 
 ### Property 29: Lives Bounds Invariant
 At any point, the Battle_System SHALL ensure 0 ≤ lives_remaining ≤ 9.
-Validates: Requirements 29.3
+**Validates: Requirements 29.3**
 
 ### Property 30: Phase Validity Invariant
 At any point, the Battle_System SHALL ensure phase is either PLAYER_TURN or ENEMY_TURN.
-Validates: Requirements 29.4
+**Validates: Requirements 29.4**
 
 
 ## Error Handling
@@ -819,10 +919,14 @@ def test_game_state_round_trip(state):
 
 - **File Upload**: Validate type and size on backend
 - **API Keys**: Environment variables only; never exposed to frontend
-- **RLS Policies**: user_id filtering on all cat and game_run queries
+- **Sole Backend Data Access**: The frontend never reads from or writes to the database directly. All data operations (game_run creation, memorial reads, personal-note updates, battle state) go through authenticated backend endpoints. The frontend Supabase client is used **only** for authentication (login, session, JWT).
+- **Ownership Enforcement in API Layer**: Every data and battle endpoint verifies the Supabase JWT and confirms the authenticated user owns the target resource (game_run / cat) before reading or writing.
+- **RLS Policies (defense-in-depth)**: The backend performs all queries with the Supabase service key (which bypasses RLS), so primary authorization is enforced in the API layer. RLS policies (user_id filtering on cat and game_run rows) remain enabled as a defense-in-depth backstop in case of misconfiguration or direct database access.
 - **Battle API Auth**: Every `/api/battle/*` request requires Supabase JWT in `Authorization` header. Backend verifies token and confirms game_run ownership before any action. supabase-py handles JWT verification.
+- **Data API Auth**: `POST /api/game-runs`, `GET /api/cats/memorial`, and `PATCH /api/cats/{cat_id}/note` all require a Supabase JWT and verify ownership, consistent with the Battle API.
+- **Digitize Endpoint**: `/api/digitize` remains a mock endpoint and is unchanged by this decision.
 - **State Authority**: Frontend cannot write `game_run.state` directly — all mutations go through the authenticated Battle API
-- **Input Validation**: Sanitize personal notes to prevent XSS
+- **Input Validation**: Sanitize personal notes to prevent XSS; enforce the ≤500 char limit server-side in `PATCH /api/cats/{cat_id}/note`
 - **Rate Limiting**: `/api/digitize` — 5 req/min per user; `/api/battle/action` — 60 req/min per user
 - **Action Validation**: Battle_System validates phase, HP/mana bounds, and ability eligibility server-side before executing
 
@@ -832,7 +936,7 @@ def test_game_state_round_trip(state):
 
 - React 18+, Vite 5+, TypeScript 5+, Tailwind CSS 3+
 - framer-motion (animations)
-- @supabase/supabase-js (auth token management + Memorial/Digitize DB reads)
+- @supabase/supabase-js (auth only — login, session management, and JWT retrieval; no direct DB reads or writes)
 
 ### Backend
 

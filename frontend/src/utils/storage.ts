@@ -82,11 +82,21 @@ export function validateImageFile(file: File): FileValidationResult {
  * @param fileName - Original file name
  * @returns Storage path
  */
+let lastSourceTimestamp = 0;
+
 export function generateSourceImagePath(
   userId: string,
   fileName: string
 ): string {
-  const timestamp = Date.now();
+  // Use a strictly-increasing timestamp so multiple calls within the same
+  // millisecond still produce unique paths (the storage upload uses
+  // `upsert: false`, so a collision would otherwise fail the second upload).
+  let timestamp = Date.now();
+  if (timestamp <= lastSourceTimestamp) {
+    timestamp = lastSourceTimestamp + 1;
+  }
+  lastSourceTimestamp = timestamp;
+
   const extension = fileName.split(".").pop()?.toLowerCase();
   return `${userId}/source-${timestamp}.${extension}`;
 }
@@ -131,7 +141,7 @@ export async function uploadCatPhoto(
     const filePath = generateSourceImagePath(userId, file.name);
 
     // Upload to storage
-    const { data, error } = await supabase.storage
+    const { error } = await supabase.storage
       .from(BUCKET_NAME)
       .upload(filePath, file, {
         cacheControl: "3600",
@@ -301,6 +311,7 @@ export function formatFileSize(bytes: number): string {
  * @returns File extension (lowercase, without dot)
  */
 export function getFileExtension(fileName: string): string {
+  if (!fileName.includes(".")) return "";
   return fileName.split(".").pop()?.toLowerCase() || "";
 }
 
