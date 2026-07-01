@@ -129,6 +129,7 @@ class CatResponse(CreatureBase):
     wins: int
     death_date: Optional[datetime] = None
     personal_note: Optional[str] = None
+    personality: Optional[str] = None
     created_at: datetime
 
 

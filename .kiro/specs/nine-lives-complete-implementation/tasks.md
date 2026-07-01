@@ -206,7 +206,7 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     - Enemy SHIELD-type ability adds its value to `enemy.shield`
     - Player basic attack is absorbed by `enemy.shield` before HP
     - Player DMG/TRUE_DMG ability damage is absorbed by `enemy.shield` before HP (DEFENCE still ignored)
-  - [ ] 5.1 Gut and replace `hooks/useGameState.ts`
+  - [x] 5.1 Gut and replace `hooks/useGameState.ts`
     - Remove all combat math: delete imports of `combat.ts`, `enemyGen.ts`; remove `initRound`, `attack`, `defend`, `useAbility`, `resolveEnemyTurn`
     - Implement `startBattle(runId: string): Promise<void>` — `POST /api/battle/start` with auth token; set `gameState`, `revival`, `events`, `gameOver` from response
     - Implement `submitAction(action, abilityId?): Promise<void>` — `POST /api/battle/action`; set state from response
@@ -216,7 +216,7 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     - Zero combat calculations — purely reflects API response
     - _Requirements: 7, 9, 10, 11, 20, 26_
 
-  - [ ] 5.2 Update `BattlePage.tsx` to use real data from the API
+  - [x] 5.2 Update `BattlePage.tsx` to use real data from the API
     - Remove `MOCK_CAT` import and all references to `data/mockCat.ts`
     - Read `runId` from route params (`/battle/:runId`)
     - Call `startBattle(runId)` on mount via `useEffect`
@@ -228,13 +228,13 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     - Display cat name, stats, abilities from `gameState` (not from a local cat object)
     - _Requirements: 7.1, 7.9, 18.4, 26.3_
 
-  - [ ] 5.3 Delete `frontend/src/utils/combat.ts` and `frontend/src/utils/enemyGen.ts`
+  - [x] 5.3 Delete `frontend/src/utils/combat.ts` and `frontend/src/utils/enemyGen.ts`
     - Verify no remaining imports before deleting (should be none after 5.1 and 5.2)
     - Also remove `frontend/src/data/mockCat.ts` if no longer referenced
     - **Must be done AFTER 5.1 and 5.2 are verified working**
     - _Requirements: 9.7, 28.5_
 
-  - [ ]* 5.4 Write frontend tests for BattlePage (Vitest)
+  - [x]* 5.4 Write frontend tests for BattlePage (Vitest)
     - `startBattle` called on mount with correct runId
     - Action buttons call `submitAction` with correct action string and abilityId
     - Buttons disabled while `isLoading=true`
@@ -243,14 +243,32 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     - Error message renders and buttons re-enable when `error` is set
 
 - [ ] 6. Update DigitizePage to create a game run and launch a battle
-  - [ ] 6.1 Wire up DigitizePage for mock-based flow (no ML yet)
-    - Implement file selection with client-side validation (type + size display, but upload not yet wired to real pipeline)
-    - On submit: create the `game_run` (status DIGITIZING) by calling the backend `POST /api/game-runs` endpoint with the auth token — **not** via a direct Supabase insert; use the returned `run_id`
-    - Call `POST /api/digitize` with file, game_run_id, user_id, auth token — still uses the existing random-stat mock implementation (digitize stays a mock and is not changed here)
-    - On success: navigate to `/battle/:runId`
-    - Display processing state and handle errors with retry
+  - [ ] 6.1 Backend: persist personality + accept digitization inputs
+    - Add a DB migration to `supabase/migration.sql` (and note it MUST be applied to the Supabase database): `ALTER TABLE cat ADD COLUMN personality TEXT` with a `CHECK (personality IS NULL OR length(personality) <= 500)` constraint
+    - Update `models/schemas.py`: add `personality: Optional[str] = None` to `CatResponse` (and to the `Cat`/creature representation as appropriate) so the field round-trips through serialization/deserialization
+    - Update `routers/digitize.py`: the endpoint already takes `cat_name`; add an optional `personality: Optional[str] = Form(None)` form field; persist `personality` on the inserted `cat` record; include it in the returned `CatResponse`
+    - Keep the mock stat generation unchanged — the mock still ignores `personality` for stat generation but stores it on the cat record so the real pipeline can use it later
+    - _Requirements: 1.9, 4.11, 4.12, 6.2, 6.7, 30.1_
+
+  - [ ] 6.2 Frontend: DigitizePage inputs + flow
+    - Update `frontend/src/api/digitize.ts` `uploadCatPhoto` to send `file`, `game_run_id`, `user_id`, `cat_name`, and optional `personality` as multipart form fields (keep it a plain `fetch` — digitize stays an open mock, no auth token required)
+    - Implement `frontend/src/pages/DigitizePage.tsx`:
+      - A required cat-name text input (non-empty, ≤100 chars)
+      - A required photo file input with client-side validation via `utils/storage.ts` `validateImageFile` (type + ≤10MB) and a size display via `formatFileSize`
+      - An optional personality description textarea (≤500 chars) with a live character counter
+      - Enable submit only when a valid name and a valid photo are present
+      - On submit: call `createGameRun()` from `api/data.ts` to get `run_id`, then `uploadCatPhoto(file, { gameRunId: run_id, userId: user.id, catName, personality })`, then navigate to `/battle/:runId`
+      - Show processing/error states with retry (reuse the already-created `run_id` on retry rather than creating a new run each attempt)
+      - Get `user` from `useAuth()`
     - The frontend must NOT insert into Supabase directly; the Supabase client is used only for the auth token/session
-    - _Requirements: 1.1–1.4, 7.1, 26.1, 26.2, 27.1–27.4_
+    - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 7.1, 26.1, 26.2, 27.1, 27.2, 27.3, 27.4_
+
+  - [ ]* 6.3 Write frontend tests for DigitizePage (Vitest + @testing-library/react)
+    - Invalid file (wrong type or >10MB) → error shown and submit disabled
+    - Missing/empty cat name → submit disabled
+    - Happy path → `createGameRun` called, then `uploadCatPhoto` called with cat name, personality, and user id, then navigate to `/battle/:runId`
+    - Digitize failure → error shown and retry reuses the existing `run_id` (does not create a new run)
+    - _Requirements: 1.1, 1.4, 1.5, 1.7, 1.9, 26.1, 26.2, 27.1, 27.2, 27.3, 27.4_
 
 - [ ] 7. Memorial system
   - [ ] 7.1 Update MemorialPage to load and display fallen cats
@@ -339,9 +357,10 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     - **Property 2: Hex Color Format** — all extracted colors match #[0-9A-Fa-f]{6}
 
   - [ ] 11.5 Implement card generator service
-    - `services/card_generator.py` — `generate_card(breed: str, colors: list[str]) -> dict`
+    - `services/card_generator.py` — `generate_card(breed: str, colors: list[str], personality: Optional[str] = None) -> dict`
     - Claude Haiku API, validate stats in bounds, exactly 4 abilities (1 special), retry logic
-    - _Requirements: 4.1–4.10, 31.1, 31.2_
+    - When `personality` is provided, weave it into the Claude Haiku prompt so it influences the generated class, stats, abilities, and lore
+    - _Requirements: 4.1–4.10, 4.11, 4.12, 31.1, 31.2_
 
   - [ ]* 11.6 Write property tests for card generation
     - **Property 3: Card Generation Schema Completeness**
@@ -359,8 +378,9 @@ This implementation plan covers the complete Nine Lives game. The work is split 
   - [ ] 12.1 Replace random stat generation with real ML pipeline
     - Update `routers/digitize.py` to call classifier → color extractor → card generator → avatar generator in sequence
     - Replace the current random stat/ability generation with outputs from the ML services
+    - Pass the `personality` from the digitize request through to `generate_card` so it influences the generated card
     - Keep the same response shape (`CatResponse`) so the frontend requires no changes
-    - _Requirements: 1.1–1.4, 2, 3, 4, 5, 6_
+    - _Requirements: 1.1–1.4, 2, 3, 4, 4.11, 5, 6_
 
   - [ ]* 12.2 Write property test for image file validation
     - **Property 1: Image File Validation**
@@ -400,8 +420,8 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     { "id": 8, "tasks": ["4.7", "4.8", "5.1"] },
     { "id": 9, "tasks": ["4.9", "4.10", "5.2"] },
     { "id": 10, "tasks": ["4.11", "5.3", "5.4", "6.1"] },
-    { "id": 11, "tasks": ["7.1", "7.2", "8.1", "8.2"] },
-    { "id": 12, "tasks": ["7.3", "9.1", "9.2", "9.3"] },
+    { "id": 11, "tasks": ["6.2", "7.1", "7.2", "8.1", "8.2"] },
+    { "id": 12, "tasks": ["6.3", "7.3", "9.1", "9.2", "9.3"] },
     { "id": 13, "tasks": ["9.4", "10"] },
     { "id": 14, "tasks": ["11.1", "11.3", "11.5", "11.7"] },
     { "id": 15, "tasks": ["11.2", "11.4", "11.6", "11.8", "12.1"] },

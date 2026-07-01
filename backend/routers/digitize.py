@@ -14,6 +14,7 @@ Related: Requirements 1.1, 1.2, 1.3, 1.4, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 26.1, 26
 import random
 import time
 from datetime import datetime
+from typing import Optional
 
 from fastapi import APIRouter, Form, HTTPException, UploadFile, File
 from dotenv import load_dotenv
@@ -210,6 +211,7 @@ async def digitize_cat(
     game_run_id: str = Form(...),
     user_id: str = Form(...),
     cat_name: str = Form(...),
+    personality: Optional[str] = Form(None),
 ) -> CatResponse:
     """
     Digitize a cat photo into a game card.
@@ -284,6 +286,7 @@ async def digitize_cat(
         "source_image_url": source_image_url,
         "status": CatStatus.ALIVE.value,
         "wins": 0,
+        "personality": personality,
     }
 
     try:
@@ -340,6 +343,7 @@ async def digitize_cat(
         wins=cat_row["wins"],
         death_date=cat_row.get("death_date"),
         personal_note=cat_row.get("personal_note"),
+        personality=cat_row.get("personality"),
         created_at=cat_row["created_at"],
         abilities=abilities,
     )

@@ -97,6 +97,7 @@ def _db_row_to_cat_response(cat_row: dict, ability_rows: list[dict]) -> CatRespo
         wins=cat_row["wins"],
         death_date=cat_row.get("death_date"),
         personal_note=cat_row.get("personal_note"),
+        personality=cat_row.get("personality"),
         created_at=cat_row["created_at"],
         abilities=[_db_row_to_ability(r) for r in ability_rows],
     )

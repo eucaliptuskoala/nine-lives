@@ -30,9 +30,11 @@ This document specifies the functional requirements for the complete implementat
 
 ## Requirements
 
-### Requirement 1: Cat Photo Upload
+### Requirement 1: Cat Digitization Inputs
 
-**User Story:** As a user, I want to upload a photo of my cat, so that I can transform it into a playable character.
+**User Story:** As a user, I want to provide my cat's name, a photo, and an optional personality description, so that I can transform it into a personalized playable character.
+
+**Context (non-normative):** The DigitizePage collects three inputs — the cat name (required), the cat photo (required), and an optional personality description that gives the card-generation LLM additional context. The "no name / generic cat" case (digitizing without a user-provided name) is explicitly out of scope and reserved for future work.
 
 #### Acceptance Criteria
 
@@ -40,6 +42,11 @@ This document specifies the functional requirements for the complete implementat
 2. WHEN a user selects a file larger than 10MB, THE System SHALL reject the upload and display an error message
 3. WHEN a user uploads a valid file, THE frontend SHALL call the `POST /api/game-runs` endpoint with a valid Auth_Token, and THE Data_API SHALL create a game_run record with status DIGITIZING and return its run_id
 4. WHEN an upload fails, THE System SHALL display an error message and allow the user to retry
+5. WHEN a user provides a cat name, THE System SHALL require a non-empty name of at most 100 characters
+6. WHERE a user provides an optional personality description, THE System SHALL accept a description of at most 500 characters
+7. IF the cat name is empty or exceeds 100 characters, THEN THE System SHALL display a validation error and SHALL disable submission
+8. IF the personality description exceeds 500 characters, THEN THE System SHALL display a validation error
+9. WHEN the user submits the digitization form, THE frontend SHALL pass the cat name and the optional personality description to `POST /api/digitize` along with the photo
 
 ### Requirement 2: Breed Classification
 
@@ -78,6 +85,8 @@ This document specifies the functional requirements for the complete implementat
 8. WHEN generating stats, THE Digitization_Pipeline SHALL ensure defence is between 3 and 40
 9. WHEN generating stats, THE Digitization_Pipeline SHALL ensure speed is between 5 and 50
 10. WHEN generating stats, THE Digitization_Pipeline SHALL ensure max mana is between 50 and 200
+11. WHEN a personality description is provided, THE Digitization_Pipeline SHALL incorporate the personality description into the Claude Haiku prompt as context influencing the generated class, stats, abilities, and lore
+12. WHERE no personality description is provided, THE Digitization_Pipeline SHALL generate the character card from the breed and colors alone
 
 ### Requirement 5: Avatar Image Generation
 
@@ -96,11 +105,12 @@ This document specifies the functional requirements for the complete implementat
 #### Acceptance Criteria
 
 1. WHEN all digitization steps complete successfully, THE Digitization_Pipeline SHALL create a cat record in the database
-2. WHEN creating a cat record, THE Digitization_Pipeline SHALL store the user_id, breed, name, class, stats, abilities, lore, source image URL, and avatar URL
+2. WHEN creating a cat record, THE Digitization_Pipeline SHALL store the user_id, breed, name, class, stats, abilities, lore, source image URL, avatar URL, and personality description
 3. WHEN a cat is created, THE System SHALL set the cat status to ALIVE
 4. WHEN a cat is created, THE System SHALL set lives_remaining to 9
 5. WHEN a cat is created, THE System SHALL update the game_run record with the cat_id
 6. WHEN a cat is created, THE System SHALL set the game_run status to IN_PROGRESS
+7. WHERE a personality description is provided, THE Digitization_Pipeline SHALL persist the user-provided personality description on the cat record
 
 ### Requirement 7: Battle Initialization
 

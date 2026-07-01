@@ -31,6 +31,7 @@ CREATE TABLE cat (
     wins            INT NOT NULL DEFAULT 0,
     death_date      TIMESTAMPTZ,
     personal_note   TEXT,
+    personality     TEXT,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -85,6 +86,8 @@ ALTER TABLE cat ADD CONSTRAINT cat_max_mana_bounds CHECK (max_mana >= 50 AND max
 ALTER TABLE cat ADD CONSTRAINT cat_lives_bounds CHECK (lives_remaining >= 0 AND lives_remaining <= 9);
 ALTER TABLE cat ADD CONSTRAINT cat_wins_non_negative CHECK (wins >= 0);
 ALTER TABLE cat ADD CONSTRAINT cat_personal_note_length CHECK (personal_note IS NULL OR length(personal_note) <= 500);
+-- personality is a persisted cat attribute captured at digitization (applied to the cat table).
+ALTER TABLE cat ADD CONSTRAINT cat_personality_length CHECK (personality IS NULL OR length(personality) <= 500);
 
 -- Ability constraints
 ALTER TABLE ability ADD CONSTRAINT ability_name_not_empty CHECK (length(trim(name)) > 0);

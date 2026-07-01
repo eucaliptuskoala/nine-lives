@@ -107,7 +107,7 @@ sequenceDiagram
     B->>S: Insert game_run (DIGITIZING)
     S-->>B: run_id
     B-->>D: run_id
-    D->>B: POST /api/digitize
+    D->>B: POST /api/digitize (includes cat name + optional personality)
     B->>ML: Classify breed (HuggingFace)
     ML-->>B: breed name
     B->>ML: Extract colors (OpenCV)
@@ -170,6 +170,8 @@ sequenceDiagram
 ```typescript
 interface DigitizePageState {
   status: 'idle' | 'uploading' | 'processing' | 'complete' | 'error';
+  catName: string;                // required; non-empty, ≤100 chars
+  personality: string;            // optional free-text context; ≤500 chars
   uploadedFile: File | null;
   errorMessage: string | null;
   catId: string | null;
@@ -178,9 +180,15 @@ interface DigitizePageState {
 
 **Responsibilities**:
 
-- Accept cat photo file upload
+- Collect the cat **name** (required) — a text input the user must fill in
+- Accept cat photo file upload (required)
+- Collect an optional free-text **personality description** that gives the card-generation LLM context for better stats/abilities/lore
+- Perform client-side validation before submitting:
+  - name is non-empty and ≤100 chars (matches the DB `cat_name_length` constraint)
+  - personality description ≤500 chars (matches the persisted `personality` column limit)
+  - image type is JPEG/PNG/WebP and size ≤10MB (existing rules)
 - Create game_run with status DIGITIZING by calling the backend `POST /api/game-runs` endpoint (with auth token) — **not** via a direct Supabase insert
-- Call backend /api/digitize endpoint
+- Call backend `/api/digitize` endpoint, passing the photo, the cat **name**, and the optional **personality** description
 - Display processing status to user
 - Navigate to BattlePage on completion
 
@@ -494,7 +502,7 @@ def generate_enemy(round_num: int) -> Enemy
 
 ```python
 @router.post("/api/digitize")
-async def digitize_cat(file: UploadFile, game_run_id: str, user_id: str) -> CatResponse
+async def digitize_cat(file: UploadFile, game_run_id: str, user_id: str, cat_name: str, personality: Optional[str] = None) -> CatResponse
 ```
 
 **Responsibilities**:
@@ -502,11 +510,13 @@ async def digitize_cat(file: UploadFile, game_run_id: str, user_id: str) -> CatR
 - Validate uploaded image file
 - Call breed classifier service
 - Call color extractor service
-- Call card generator service (stats, abilities, lore)
+- Call card generator service (stats, abilities, lore) — passing the `personality` context (when provided) so it can influence generation in the real pipeline
 - Call image generator service (avatar)
-- Create cat record in Supabase
+- Create cat record in Supabase, persisting `personality` on the cat record
 - Update game_run with cat_id
 - Return complete cat data
+
+**Note**: The current mock implementation ignores `personality` for stat generation but still stores it on the cat record so it is available for the real pipeline and can enrich the memorial later.
 
 #### 9. Breed Classifier Service (`services/classifier.py`)
 
@@ -535,8 +545,10 @@ async def extract_colors(image_bytes: bytes, n_colors: int = 3) -> list[str]
 **Interface**:
 
 ```python
-async def generate_card(breed: str, colors: list[str]) -> dict[str, Any]
+async def generate_card(breed: str, colors: list[str], personality: Optional[str] = None) -> dict[str, Any]
 ```
+
+**Note**: When `personality` is provided it is incorporated into the Claude Haiku prompt to influence name-consistency, class, stats, abilities, and lore.
 
 **Returns**:
 
@@ -610,10 +622,13 @@ interface Cat {
   wins: number;
   death_date: string | null;
   personal_note: string | null;  // max 500 chars
+  personality: string | null;    // user-provided personality description used as generation context; max 500 chars; nullable
   created_at: string;
   abilities: Ability[];  // exactly 4; exactly 1 with is_special=true
 }
 ```
+
+**Note**: `personality` maps to a new nullable `personality` column on the `cat` table (a DB migration is required to add it, e.g. `ALTER TABLE cat ADD COLUMN personality TEXT` with a `length(personality) <= 500` check constraint). It is included in `CatResponse`.
 
 ### Ability
 
@@ -923,7 +938,7 @@ def test_game_state_round_trip(state):
 
 ### Integration Tests (pytest + TestClient, Playwright E2E)
 
-1. Full digitize flow (upload → cat record created with 4 abilities)
+1. Full digitize flow (upload → cat record created with 4 abilities); verify the cat **name** and optional **personality** description are accepted, `personality` is threaded into card generation, and `personality` is persisted on the cat record (and returned in `CatResponse`)
 2. Battle start → verify initial GameState returned
 3. Battle action (attack) → verify enemy HP decreases in response and in DB
 4. Death/revival flow → verify `revival: true` in response, HP/mana restored
