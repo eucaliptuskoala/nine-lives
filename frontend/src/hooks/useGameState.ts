@@ -1,191 +1,102 @@
 import { useState, useCallback } from "react";
-import type { GameState, Ability } from "../types/game";
-import { Phase } from "../types/game";
-import { generateEnemy } from "../utils/enemyGen";
-import { createEnemyAttack, regenMana, tickCooldowns } from "../utils/combat";
+import type { GameState, Cat } from "../types/game";
+import {
+  startBattle as startBattleApi,
+  submitAction as submitActionApi,
+  type BattleAction,
+} from "../api/battle";
+import { ApiError } from "../api/authFetch";
 
-export function useGameState() {
-  const [state, setState] = useState<GameState | null>(null);
+/**
+ * Thin API wrapper hook for the Battle system. Contains NO combat math — it
+ * simply calls the Battle API and reflects whatever state the backend returns.
+ * The backend is the authoritative game engine.
+ */
+export interface UseGameStateReturn {
+  gameState: GameState | null;
+  cat: Cat | null;
+  isLoading: boolean;
+  error: string | null;
+  revival: boolean;
+  gameOver: boolean;
+  events: string[];
+  startBattle: (runId: string) => Promise<void>;
+  submitAction: (
+    action: BattleAction,
+    abilityId?: string,
+  ) => Promise<void>;
+}
 
-  const initRound = useCallback(
-    (
-      catHp: number,
-      catMaxHp: number,
-      catMana: number,
-      catMaxMana: number,
-      lives: number,
-      round: number
-    ) => {
-      const enemy = generateEnemy(round);
-      setState({
-        player_hp: catHp,
-        player_max_hp: catMaxHp,
-        player_mana: catMana,
-        player_max_mana: catMaxMana,
-        player_is_defending: false,
-        player_shield: 0,
-        lives_remaining: lives,
-        player_ability_cooldowns: {},
-        phase: Phase.PLAYER_TURN,
-        current_round: round,
-        enemy,
-      });
-    },
-    []
-  );
+function toErrorMessage(err: unknown): string {
+  if (err instanceof ApiError) return err.message;
+  if (err instanceof Error) return err.message;
+  return "Something went wrong. Please try again.";
+}
 
-  const attack = useCallback(() => {
-    setState((prev) => {
-      if (!prev || prev.phase !== Phase.PLAYER_TURN) return prev;
+export function useGameState(): UseGameStateReturn {
+  const [gameState, setGameState] = useState<GameState | null>(null);
+  const [cat, setCat] = useState<Cat | null>(null);
+  const [runId, setRunId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [revival, setRevival] = useState(false);
+  const [gameOver, setGameOver] = useState(false);
+  const [events, setEvents] = useState<string[]>([]);
 
-      const playerMana = regenMana(prev.player_mana, prev.player_max_mana);
-      const playerCooldowns = tickCooldowns(prev.player_ability_cooldowns);
-      const dmg = Math.max(prev.player_max_hp * 0.1 - prev.enemy.def * 0.5, 1);
-      const newEnemyHp = Math.max(prev.enemy.hp - dmg, 0);
-      const enemyDead = newEnemyHp <= 0;
-
-      if (enemyDead) {
-        const nextRound = prev.current_round + 1;
-        return {
-          ...prev,
-          player_mana: playerMana,
-          player_ability_cooldowns: playerCooldowns,
-          enemy: generateEnemy(nextRound),
-          phase: Phase.PLAYER_TURN,
-          current_round: nextRound,
-        } satisfies GameState;
-      }
-
-      return {
-        ...prev,
-        player_mana: playerMana,
-        player_ability_cooldowns: playerCooldowns,
-        enemy: { ...prev.enemy, hp: newEnemyHp },
-        phase: Phase.ENEMY_TURN,
-      } satisfies GameState;
-    });
+  const startBattle = useCallback(async (id: string) => {
+    setIsLoading(true);
+    setError(null);
+    setRunId(id);
+    try {
+      const res = await startBattleApi(id);
+      setGameState(res.game_state);
+      setCat(res.cat);
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
-  const defend = useCallback(() => {
-    setState((prev) => {
-      if (!prev || prev.phase !== Phase.PLAYER_TURN) return prev;
+  const submitAction = useCallback(
+    async (action: BattleAction, abilityId?: string) => {
+      // Guard against concurrent submissions while a request is in flight, and
+      // against acting before a battle has been started.
+      if (isLoading || !runId) return;
 
-      const playerMana = regenMana(prev.player_mana, prev.player_max_mana);
-      const playerCooldowns = tickCooldowns(prev.player_ability_cooldowns);
-
-      return {
-        ...prev,
-        player_mana: playerMana,
-        player_ability_cooldowns: playerCooldowns,
-        player_is_defending: true,
-        phase: Phase.ENEMY_TURN,
-      } satisfies GameState;
-    });
-  }, []);
-
-  const useAbility = useCallback(
-    (abilityId: string, abilities: Ability[]) => {
-      setState((prev) => {
-        if (!prev || prev.phase !== Phase.PLAYER_TURN) return prev;
-
-        const ability = abilities.find((a) => a.id === abilityId);
-        if (!ability) return prev;
-        if ((prev.player_ability_cooldowns[abilityId] ?? 0) > 0) return prev;
-        if (prev.player_mana < ability.mana_cost) return prev;
-
-        const playerMana = regenMana(
-          prev.player_mana - ability.mana_cost,
-          prev.player_max_mana
-        );
-        const playerCooldowns = tickCooldowns({
-          ...prev.player_ability_cooldowns,
-          [abilityId]: ability.cooldown,
+      setIsLoading(true);
+      setError(null);
+      try {
+        const res = await submitActionApi({
+          run_id: runId,
+          action,
+          ability_id: abilityId,
         });
-
-        let playerHp = prev.player_hp;
-        let playerShield = prev.player_shield;
-        let newEnemyHp = prev.enemy.hp;
-
-        if (ability.type === "DMG" || ability.type === "TRUE_DMG") {
-          const raw = Math.max(ability.dmg - prev.enemy.def * 0.5, 1);
-          newEnemyHp = Math.max(prev.enemy.hp - raw, 0);
-        } else if (ability.type === "HEAL") {
-          playerHp = Math.min(prev.player_max_hp, prev.player_hp + ability.dmg);
-        } else if (ability.type === "SHIELD") {
-          playerShield = ability.dmg;
-        }
-
-        const enemyDead = newEnemyHp <= 0;
-
-        if (enemyDead) {
-          const nextRound = prev.current_round + 1;
-          return {
-            ...prev,
-            player_hp: playerHp,
-            player_mana: playerMana,
-            player_shield: playerShield,
-            player_ability_cooldowns: playerCooldowns,
-            enemy: generateEnemy(nextRound),
-            phase: Phase.PLAYER_TURN,
-            current_round: nextRound,
-          } satisfies GameState;
-        }
-
-        return {
-          ...prev,
-          player_hp: playerHp,
-          player_mana: playerMana,
-          player_shield: playerShield,
-          player_ability_cooldowns: playerCooldowns,
-          enemy: { ...prev.enemy, hp: newEnemyHp },
-          phase: Phase.ENEMY_TURN,
-        } satisfies GameState;
-      });
+        setGameState(res.game_state);
+        setCat(res.cat);
+        setRevival(res.revival);
+        setGameOver(res.game_over);
+        setEvents(res.events);
+      } catch (err) {
+        // On failure, leave gameState untouched so buttons can re-enable and
+        // the player can retry the action.
+        setError(toErrorMessage(err));
+      } finally {
+        setIsLoading(false);
+      }
     },
-    []
+    [isLoading, runId],
   );
 
-  const resolveEnemyTurn = useCallback(() => {
-    setState((prev) => {
-      if (!prev || prev.phase !== Phase.ENEMY_TURN) return prev;
-
-      const withRegen = {
-        ...prev,
-        enemy: {
-          ...prev.enemy,
-          mana: regenMana(prev.enemy.mana, prev.enemy.max_mana),
-          ability_cooldowns: tickCooldowns(prev.enemy.ability_cooldowns),
-        },
-      };
-
-      const result = createEnemyAttack(withRegen);
-
-      if (result.player_hp <= 0) {
-        const newLives = result.lives_remaining - 1;
-        if (newLives <= 0) {
-          return {
-            ...result,
-            lives_remaining: 0,
-            player_hp: 0,
-            phase: Phase.PLAYER_TURN,
-          } satisfies GameState;
-        }
-        return {
-          ...result,
-          player_hp: result.player_max_hp,
-          player_mana: result.player_max_mana,
-          player_shield: 0,
-          lives_remaining: newLives,
-          phase: Phase.PLAYER_TURN,
-        } satisfies GameState;
-      }
-
-      return {
-        ...result,
-        phase: Phase.PLAYER_TURN,
-      } satisfies GameState;
-    });
-  }, []);
-
-  return { state, setState, initRound, attack, defend, useAbility, resolveEnemyTurn };
+  return {
+    gameState,
+    cat,
+    isLoading,
+    error,
+    revival,
+    gameOver,
+    events,
+    startBattle,
+    submitAction,
+  };
 }

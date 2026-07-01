@@ -235,6 +235,7 @@ interface MemorialPageState {
 ```typescript
 interface UseGameStateReturn {
   gameState: GameState | null;
+  cat: Cat | null;
   isLoading: boolean;
   error: string | null;
   revival: boolean;
@@ -248,10 +249,12 @@ function useGameState(): UseGameStateReturn
 
 **Responsibilities**:
 
-- `startBattle(runId)`: calls `POST /api/battle/start`, sets local `gameState` from response
-- `submitAction(action, abilityId?)`: calls `POST /api/battle/action`, sets local `gameState`, `revival`, and `events` from response
+- `startBattle(runId)`: calls `POST /api/battle/start`, sets local `gameState` and `cat` from response
+- `submitAction(action, abilityId?)`: calls `POST /api/battle/action`, sets local `gameState`, `cat`, `revival`, and `events` from response
 - Exposes `isLoading` and `error` for the UI to display
 - No local combat calculations — all game outcomes come from the API response
+
+**Note**: `cat` is the player's cat returned in the battle responses (static data — name, class, stats, avatar, abilities). BattlePage and ActionButtons render the player's name, class, and ability list from this `cat`, while per-ability cooldown values come from `gameState.player_ability_cooldowns` (keyed by ability id).
 
 **Removed (compared to old implementation)**:
 
@@ -316,7 +319,7 @@ async def submit_action(body: BattleActionRequest, user: AuthUser) -> BattleActi
 
 **`submit_action` processing order**:
 
-1. Verify auth token and confirm the authenticated user owns `run_id`
+1. Verify auth token and confirm the authenticated user owns `run_id` (`game_run.user_id == authenticated user`)
 2. Reject with 409 if `game_run.status == COMPLETED`
 3. Load current `GameState` from `game_run.state`
 4. Validate state invariants (HP bounds, mana bounds, phase must be PLAYER_TURN)
@@ -325,18 +328,18 @@ async def submit_action(body: BattleActionRequest, user: AuthUser) -> BattleActi
 7. If enemy HP > 0: regen enemy mana, tick enemy cooldowns, AI picks and executes enemy action
 8. Resolve death/revival if player HP = 0
 9. If enemy HP = 0: increment wins counter, increment round, generate new enemy, skip enemy turn
-10. Persist updated `GameState` to `game_run.state`
-11. Return `BattleActionResponse`
+10. Persist updated `GameState` (minus the transient `events`) to `game_run.state` — the loaded `cat` is **not** persisted into `game_run.state`
+11. Return `BattleActionResponse{ game_state, cat, game_over, revival, events }` (the router already loaded the cat while resolving the action, so it is simply returned)
 
 **`start_battle` processing order**:
 
-1. Verify auth token and confirm the authenticated user owns `run_id`
+1. Verify auth token and confirm the authenticated user owns `run_id` (`game_run.user_id == authenticated user`)
 2. If `game_run.state` is already populated, return it directly (idempotent)
 3. Load cat and abilities from database
 4. Build initial `GameState`: player HP/mana from cat stats, round 1, phase PLAYER_TURN, special ability cooldowns pre-set to max
 5. Generate enemy for round 1 via `enemy_gen.generate_enemy(1)`
-6. Persist `GameState` to `game_run.state`, set `game_run.status = IN_PROGRESS`
-7. Return `BattleStateResponse`
+6. Persist `GameState` to `game_run.state`, set `game_run.status = IN_PROGRESS` — the loaded `cat` is **not** persisted into `game_run.state`
+7. Return `BattleStateResponse{ game_state, cat }` (the router already loaded the cat in step 3, so it is simply returned)
 
 
 #### 5b. Data Router (`routers/data.py`)
@@ -426,6 +429,15 @@ shield_remaining = shield - absorbed
 return damage_to_hp, shield_remaining
 ```
 
+**Shield mechanics (symmetric for player and enemy)**:
+
+Shields work identically for both creatures. `apply_ability` and damage resolution treat the player and enemy the same way, differing only in which fields they read/write (`player_shield` vs `enemy.shield`):
+
+- **SHIELD-type abilities**: A SHIELD ability adds its value to the acting creature's shield. A player SHIELD ability adds to `player_shield`; an enemy SHIELD ability adds to `enemy.shield`.
+- **Incoming damage absorption**: Any incoming damage to a creature is absorbed by that creature's shield first, then the remainder is applied to HP. This applies to the player's basic attack **and** the player's DMG/TRUE_DMG abilities hitting the enemy, and symmetrically to the enemy's actions hitting the player.
+- **Abilities and DEFENCE vs shield**: DMG-type abilities ignore the target's DEFENCE stat, but shield absorption **still applies**. Basic attacks apply DEFENCE reduction *and* shield absorption.
+- **Reusing `calculate_damage`**: Both damage paths use the same helper. For a basic attack, call `calculate_damage(atk, def_=target_defence, is_defending, shield=target_shield)`. For ability damage, call `calculate_damage(atk=ability.dmg, def_=0, is_defending=False, shield=target_shield)` — passing `def_=0` ignores DEFENCE while the returned `shield_remaining` still reflects shield absorption. Both return `(damage_to_hp, shield_remaining)`, which are written back to the target's HP and shield.
+
 **`compute_enemy_stats` formula**:
 
 ```python
@@ -471,6 +483,7 @@ def generate_enemy(round_num: int) -> Enemy
 - Shuffle pool; pick 1 special and 3 regular abilities
 - Set all cooldowns to 0 initially (special cooldown pre-set to max by the Battle Router at round start per Requirement 8.9)
 - Set starting mana to `floor(max_mana * 0.6)`
+- Set starting `shield` to 0
 - Name and breed selected randomly from server-side name/breed lists
 
 #### 8. Digitize Router (`routers/digitize.py`)
@@ -633,6 +646,7 @@ interface Enemy {
   spd: number;
   mana: number;
   max_mana: number;
+  shield: number;  // default 0; absorbs incoming damage before HP, mirroring player_shield
   ability_cooldowns: Record<string, number>;
   abilities: EnemyAbility[];
   avatar_url: string;
@@ -652,6 +666,7 @@ Stats scaled by round: `multiplier = 1 + (round - 1) * 0.3`
 ```typescript
 interface GameRun {
   id: string;
+  user_id: string;         // NOT NULL; references the auth user. Ownership is enforced directly via game_run.user_id (RLS: game_run.user_id = auth.uid()), independent of cat_id
   cat_id: string | null;   // null during DIGITIZING
   status: GameStatus;      // DIGITIZING → IN_PROGRESS → COMPLETED
   current_round: number;
@@ -659,6 +674,8 @@ interface GameRun {
   created_at: string;
   completed_at: string | null;
 }
+
+**Ownership**: A `game_run` is owned by the user referenced in its own `user_id` column. The backend authorizes access by comparing `game_run.user_id` to the authenticated user, and RLS enforces the same `game_run.user_id = auth.uid()` rule at the database level. Ownership is **not** derived through a `cat` join, so it holds even during the DIGITIZING state when `cat_id` is null.
 ```
 
 ### GameState (JSONB, written exclusively by the Battle_System)
@@ -690,13 +707,17 @@ class BattleActionRequest(BaseModel):
 
 class BattleActionResponse(BaseModel):
     game_state: GameState
+    cat: CatResponse        # player's cat (name, class, stats, avatar, abilities) — response-only, not persisted
     game_over: bool = False
     revival: bool = False   # True if a life was lost and the cat was revived this turn
     events: list[str] = []  # human-readable event log for the frontend to display
 
 class BattleStateResponse(BaseModel):
     game_state: GameState
+    cat: CatResponse        # player's cat (name, class, stats, avatar, abilities) — response-only, not persisted
 ```
+
+**Note**: `CatResponse` is the existing model already defined for the digitize/data endpoints (it carries the cat's `name`, `class`, stats, `avatar_url`, and its `abilities`). Both battle responses now return the full player `cat` so the frontend can render the player's identity — name, class, and the list of abilities — directly from static cat data. The cat is included in the **response payload only**; it is **not** added to the persisted `GameState` JSONB. `GameState` continues to carry only dynamic combat values such as `player_ability_cooldowns` (keyed by ability id), which the frontend joins against the static abilities in `cat` when rendering.
 
 
 ## Correctness Properties
@@ -756,7 +777,7 @@ For any ability use, the Battle_System SHALL set cooldown to its maximum value i
 **Validates: Requirements 11.5**
 
 ### Property 14: Ability Damage Direct Application
-For any DMG-type ability, the Battle_System SHALL apply damage directly without defence reduction.
+For any DMG-type ability, the Battle_System SHALL apply damage ignoring the target's DEFENCE stat (no DEFENCE reduction); the target's shield SHALL still absorb the damage before it reaches HP.
 **Validates: Requirements 11.6, 28.4**
 
 ### Property 15: Heal HP Bounds
@@ -764,7 +785,7 @@ For any heal: new_hp = min(max_hp, current_hp + heal_value).
 **Validates: Requirements 11.7, 16.3**
 
 ### Property 16: Shield Addition
-For any SHIELD ability: new_shield = old_shield + ability.value.
+For any SHIELD ability used by either creature: new_shield = old_shield + ability.value (a player SHIELD ability adds to player_shield; an enemy SHIELD ability adds to enemy.shield).
 **Validates: Requirements 11.8**
 
 ### Property 17: Mana Regeneration Formula
@@ -776,7 +797,7 @@ For any cooldown > 0, the Battle_System SHALL decrement by 1 each turn: new = ma
 **Validates: Requirements 13.1, 13.2, 13.3**
 
 ### Property 19: Shield Damage Absorption Priority
-The Battle_System SHALL first reduce shield by min(shield, damage), then apply remainder to HP.
+For either creature (player or enemy), when damage is applied the Battle_System SHALL first reduce that creature's shield by min(shield, damage), then apply the remainder to HP.
 **Validates: Requirements 14.1, 14.2, 14.3**
 
 ### Property 20: Defend and Shield Interaction Order
@@ -823,6 +844,10 @@ At any point, the Battle_System SHALL ensure 0 ≤ lives_remaining ≤ 9.
 At any point, the Battle_System SHALL ensure phase is either PLAYER_TURN or ENEMY_TURN.
 **Validates: Requirements 29.4**
 
+### Property 31: Enemy Shield Mechanics
+When an enemy uses a SHIELD-type ability, the Battle_System SHALL add the ability value to enemy.shield; and any incoming damage to the enemy — from the player's basic attack or from DMG/TRUE_DMG abilities — SHALL be absorbed by enemy.shield before HP, mirroring the player's shield behavior.
+**Validates: Requirements 11.8, 14.1, 14.2, 14.3, 15.5, 16.2**
+
 
 ## Error Handling
 
@@ -866,13 +891,13 @@ At any point, the Battle_System SHALL ensure phase is either PLAYER_TURN or ENEM
 
 ### Backend Unit Tests (pytest)
 
-1. **`services/combat.py`** — damage formula edge cases, defend+shield interaction, mana regen bounds, cooldown floor at 0
+1. **`services/combat.py`** — damage formula edge cases, defend+shield interaction, shield absorption for both player and enemy, enemy SHIELD ability adding to `enemy.shield`, DMG/TRUE_DMG ability damage ignoring DEFENCE but still absorbed by the target's shield, mana regen bounds, cooldown floor at 0
 2. **`services/enemy_gen.py`** — stat scaling formula, 4-ability structure, 60% starting mana
-3. **`routers/battle.py`** (mocked Supabase) — initial state creation, idempotent start, full turn resolution, auth/403/409 error codes, invalid ability rejection
+3. **`routers/battle.py`** (mocked Supabase) — initial state creation, idempotent start, full turn resolution, auth/403/409 error codes, invalid ability rejection, responses include the player `cat` (`BattleStateResponse{ game_state, cat }` and `BattleActionResponse{ game_state, cat, ... }`) while `cat` is not persisted into `game_run.state`
 
 ### Backend Property Tests (pytest + hypothesis)
 
-All 30 correctness properties above are tested here. Key examples:
+All 31 correctness properties above are tested here. Key examples:
 
 ```python
 @given(atk=st.integers(min_value=5, max_value=50), def_=st.integers(min_value=3, max_value=40))

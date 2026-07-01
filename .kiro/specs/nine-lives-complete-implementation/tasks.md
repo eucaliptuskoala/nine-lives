@@ -25,7 +25,7 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     - Enable RLS on cats, abilities, and game_runs tables
     - Create policy: users can only SELECT/INSERT/UPDATE their own cats (WHERE user_id = auth.uid())
     - Create policy: abilities follow cat ownership (JOIN with cats)
-    - Create policy: game_runs follow cat ownership (JOIN with cats)
+    - Create policy: game_runs scoped directly to the owner via `game_run.user_id = auth.uid()` (SELECT/INSERT/UPDATE/DELETE)
     - _Requirements: 24.1, 24.2, 24.3_
 
   - [x] 1.3 Set up Supabase storage bucket for cat images
@@ -49,7 +49,7 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     - Expose current `user` and `session` from the hook
     - _Requirements: 25.1, 25.2, 25.3, 25.4_
 
-  - [ ] 3.2 Build the login/signup page (email + password)
+  - [x] 3.2 Build the login/signup page (email + password)
     - Create a `LoginPage` component (`frontend/src/pages/LoginPage.tsx`) with an email + password sign-in form and a sign-up form (toggle between the two views, or render them as separate views)
     - Implement email/password auth via Supabase: sign up with `supabase.auth.signUp({ email, password })` and sign in with `supabase.auth.signInWithPassword({ email, password })`
     - Implement sign-out via `supabase.auth.signOut()`
@@ -58,34 +58,34 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     - On successful login, redirect to the originally intended destination (works together with the `AuthGuard` from task 3.3)
     - _Requirements: 25.1, 25.2, 25.3, 25.4_
 
-  - [ ] 3.3 Add auth guard for protected pages
+  - [x] 3.3 Add auth guard for protected pages
     - Create an `AuthGuard` wrapper component (or HOC) that checks for a valid session
     - Wrap DigitizePage, BattlePage, and MemorialPage with the guard
     - Redirect unauthenticated users to the `/login` route (the custom email/password login page from task 3.2)
     - Preserve the intended destination URL for post-login redirect
     - _Requirements: 25.1, 25.2, 25.3, 25.4_
 
-  - [ ] 3.4 Add a shared authenticated-fetch mechanism and thread it into the endpoints that require auth
+  - [x] 3.4 Add a shared authenticated-fetch mechanism and thread it into the endpoints that require auth
     - Create a single shared authenticated-fetch helper/wrapper (e.g. `frontend/src/api/authFetch.ts`) that pulls the JWT from the active session via `supabase.auth.getSession()` and sets the `Authorization: Bearer <token>` header on each request
     - Apply this mechanism to the Battle API calls that REQUIRE auth: `POST /api/battle/start` and `POST /api/battle/action`
     - Apply this mechanism to the new Data API calls that REQUIRE auth: `POST /api/game-runs`, `GET /api/cats/memorial`, and `PATCH /api/cats/{cat_id}/note`
     - `POST /api/digitize` does NOT require the token for now because it remains an open mock endpoint — digitize is intentionally excluded from required auth. The shared fetch helper MAY be reused for it later when the real ML pipeline is secured, but no token is required at this stage
     - _Requirements: 21.1, 21.2, 24.1_
 
-  - [ ] 3.5 Implement JWT verification on the backend
+  - [x] 3.5 Implement JWT verification on the backend
     - In `main.py`, add a dependency or middleware that extracts and verifies the Supabase JWT on all `/api/battle/*` routes
     - Use `supabase-py` to verify the token and extract `user_id`
     - Return 401 if token is missing or invalid
     - _Requirements: 21.1, 21.2_
 
-  - [ ] 3.6 Add sign-out control
+  - [x] 3.6 Add sign-out control
     - Add a sign-out UI control (e.g. a button in a shared header/nav) shown on the authenticated pages — DigitizePage, BattlePage, and MemorialPage
     - On click, call `supabase.auth.signOut()`, clear the local session/user state, and redirect the user to `/login`
     - Ensure the `onAuthStateChange` listener from task 3.1 reacts to sign-out so the `AuthGuard` (task 3.3) immediately treats the user as unauthenticated
     - _Requirements: 25.4_
 
-- [ ] 4. Backend battle engine and Data Router
-  - [ ] 4.1 Create `services/combat.py` — pure combat calculation functions (no DB access)
+- [x] 4. Backend battle engine and Data Router
+  - [x] 4.1 Create `services/combat.py` — pure combat calculation functions (no DB access)
     - `calculate_damage(atk: int, def_: int, is_defending: bool, shield: int) -> tuple[int, int]`
       - `raw = max(atk - def_*0.5, 1)`; if defending: `raw = floor(raw*0.5)`; return `(floor(raw - min(shield, raw)), shield - min(shield, raw))`
     - `regen_mana(current: int, max_mana: int) -> int` — `min(max_mana, current + floor(max_mana*0.1))`
@@ -96,14 +96,14 @@ This implementation plan covers the complete Nine Lives game. The work is split 
       - SHIELD: `new_shield = current_shield + ability.dmg`
     - _Requirements: 9, 10, 11, 12, 13, 14, 28_
 
-  - [ ]* 4.2 Write property tests for `combat.py` (pytest + hypothesis)
+  - [x]* 4.2 Write property tests for `combat.py` (pytest + hypothesis)
     - **Property 8**: `calculate_damage` always returns damage ≥ 1
     - **Property 9**: HP after damage always in [0, max_hp]
     - **Property 10**: Defending reduces damage by exactly 50%
     - **Property 17**: `regen_mana` never exceeds max_mana; adds exactly floor(max*0.1)
     - **Property 18**: `tick_cooldowns` decrements by 1 and never goes below 0
 
-  - [ ] 4.3 Create `services/enemy_gen.py` — server-side enemy generation (no DB access)
+  - [x] 4.3 Create `services/enemy_gen.py` — server-side enemy generation (no DB access)
     - `compute_enemy_stats(round_num: int) -> dict` — exact formulas from Requirement 8.1–8.6
     - `generate_enemy(round_num: int) -> dict`
       - Call `compute_enemy_stats`; pick random name/breed from pools
@@ -112,11 +112,11 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     - Define full `ABILITY_POOL` list mirroring the current `enemyGen.ts` (12 abilities)
     - _Requirements: 8.1–8.9_
 
-  - [ ]* 4.4 Write property tests for `enemy_gen.py` (pytest + hypothesis)
+  - [x]* 4.4 Write property tests for `enemy_gen.py` (pytest + hypothesis)
     - **Property 6**: Stats match exact scaling formulas for rounds 1–20
     - **Property 7**: Every generated enemy has exactly 4 abilities with exactly 1 `is_special=True`
 
-  - [ ] 4.5 Create `services/battle_engine.py` — orchestrates a full turn (no DB access, pure functions)
+  - [x] 4.5 Create `services/battle_engine.py` — orchestrates a full turn (no DB access, pure functions)
     - `resolve_player_action(state, action, ability_id, cat) -> tuple[GameState, list[str]]`
       - Validate phase is PLAYER_TURN; regen player mana; tick player cooldowns first
       - "attack": `calculate_damage(cat.dmg, enemy.def, False, 0)` → subtract from enemy HP
@@ -134,7 +134,7 @@ This implementation plan covers the complete Nine Lives game. The work is split 
       - enemy_hp=0: increment wins, increment current_round, `generate_enemy(new_round)`, set phase PLAYER_TURN, preserve player HP/mana/cooldowns
     - _Requirements: 15, 17, 18, 19_
 
-  - [ ] 4.6 Create `routers/battle.py` and update `models/schemas.py`
+  - [x] 4.6 Create `routers/battle.py` and update `models/schemas.py`
     - Add to `models/schemas.py`:
       - `BattleActionRequest(run_id, action: Literal["attack","defend","ability"], ability_id?)`
       - `BattleActionResponse(game_state, revival=False, game_over=False, events=[])`
@@ -152,7 +152,7 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     - Register router in `main.py` with prefix `/api`
     - _Requirements: 7, 9, 10, 11, 20, 21, 29_
 
-  - [ ] 4.7 Write unit tests for `routers/battle.py` (pytest, mock Supabase)
+  - [x] 4.7 Write unit tests for `routers/battle.py` (pytest, mock Supabase)
     - `POST /api/battle/start` creates correct initial state (HP=max, mana=max, round=1, special CD at max)
     - `POST /api/battle/start` is idempotent (returns existing state on second call)
     - `POST /api/battle/action` with attack: enemy HP decreases, state persisted, events non-empty
@@ -163,7 +163,7 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     - Action when phase is not PLAYER_TURN returns error
     - _Requirements: 7, 9, 10, 11, 20.5, 21_
 
-  - [ ] 4.8 Create `routers/data.py` and add data request/response models to `models/schemas.py`
+  - [x] 4.8 Create `routers/data.py` and add data request/response models to `models/schemas.py`
     - Add to `models/schemas.py`:
       - `CreateGameRunResponse(run_id: str, status: GameStatus)` — status is always DIGITIZING on creation
       - `UpdateNoteRequest(note: str)` — max 500 chars, validated server-side
@@ -183,7 +183,7 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     - Register the router in `main.py` with prefix `/api`
     - _Requirements: 1.3, 22.1, 23.1, 23.2, 23.3, 23.4, 24.1, 24.2, 24.3, 24.4_
 
-  - [ ]* 4.9 Write unit tests for `routers/data.py` (pytest, mock Supabase)
+  - [x]* 4.9 Write unit tests for `routers/data.py` (pytest, mock Supabase)
     - All three endpoints return 401 when the Authorization header is missing or invalid
     - `PATCH /api/cats/{cat_id}/note` returns 403 when the cat belongs to a different user
     - `PATCH /api/cats/{cat_id}/note` returns 400 when the note exceeds 500 chars
@@ -191,7 +191,21 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     - `POST /api/game-runs` inserts a DIGITIZING game_run for the authenticated user and returns its run_id
     - _Requirements: 1.3, 22.1, 23.2, 23.3, 23.4, 24.1_
 
-- [ ] 5. Frontend wiring — connect battle UI to Battle API
+  - [x] 4.10 Add symmetric enemy shield mechanic (Enemy Shield, Option A)
+    - Add `shield: int = 0` to the `Enemy` model in `models/schemas.py`
+    - `services/enemy_gen.py`: initialize `shield=0` on generated enemies
+    - `services/combat.py` / `services/battle_engine.py`: enemy SHIELD-type abilities add their value to `enemy.shield`
+    - Route the player's basic attack through the enemy's shield first (already covered by `calculate_damage`), and route the player's DMG/TRUE_DMG ability damage through the enemy's shield as well — reuse `calculate_damage` with `def_=0` for ability damage so DEFENCE is ignored but shield still absorbs
+    - Ensure `apply_ability_effect` (or the engine) routes DMG/TRUE_DMG ability damage through the target's shield for BOTH directions (player→enemy and enemy→player)
+    - Keep the symmetric behavior on the player side (enemy DMG abilities already absorbed by `player_shield`)
+    - _Requirements: 11.6, 11.8, 14.5, 14.6, 14.7, 14.8, 15.5, 16.2, 28.4_
+
+  - [x]* 4.11 Write property/unit tests for enemy shield mechanic (pytest + hypothesis)
+    - **Property 31: Enemy Shield Mechanics**
+    - **Validates: Requirements 11.8, 14.5, 15.5, 16.2**
+    - Enemy SHIELD-type ability adds its value to `enemy.shield`
+    - Player basic attack is absorbed by `enemy.shield` before HP
+    - Player DMG/TRUE_DMG ability damage is absorbed by `enemy.shield` before HP (DEFENCE still ignored)
   - [ ] 5.1 Gut and replace `hooks/useGameState.ts`
     - Remove all combat math: delete imports of `combat.ts`, `enemyGen.ts`; remove `initRound`, `attack`, `defend`, `useAbility`, `resolveEnemyTurn`
     - Implement `startBattle(runId: string): Promise<void>` — `POST /api/battle/start` with auth token; set `gameState`, `revival`, `events`, `gameOver` from response
@@ -384,8 +398,8 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     { "id": 6, "tasks": ["4.2", "4.4", "4.5"] },
     { "id": 7, "tasks": ["4.6"] },
     { "id": 8, "tasks": ["4.7", "4.8", "5.1"] },
-    { "id": 9, "tasks": ["4.9", "5.2"] },
-    { "id": 10, "tasks": ["5.3", "5.4", "6.1"] },
+    { "id": 9, "tasks": ["4.9", "4.10", "5.2"] },
+    { "id": 10, "tasks": ["4.11", "5.3", "5.4", "6.1"] },
     { "id": 11, "tasks": ["7.1", "7.2", "8.1", "8.2"] },
     { "id": 12, "tasks": ["7.3", "9.1", "9.2", "9.3"] },
     { "id": 13, "tasks": ["9.4", "10"] },

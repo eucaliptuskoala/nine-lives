@@ -1,6 +1,6 @@
 from enum import Enum
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Literal, Optional
 from datetime import datetime
 
 
@@ -83,6 +83,7 @@ class Enemy(BaseModel):
     spd: int
     mana: int
     max_mana: int
+    shield: int = 0
     ability_cooldowns: dict[str, int]
     abilities: list[EnemyAbility]
     avatar_url: str
@@ -95,10 +96,12 @@ class GameState(BaseModel):
     player_max_mana: int
     player_is_defending: bool
     player_shield: int
+    lives_remaining: int
     player_ability_cooldowns: dict[str, int]
     phase: Phase
     current_round: int
     enemy: Enemy
+    events: Optional[list[str]] = None
 
 
 class CreatureBase(BaseModel):
@@ -136,3 +139,58 @@ class GameRunResponse(BaseModel):
     current_round: int
     created_at: datetime
     completed_at: Optional[datetime] = None
+
+
+# ─── Battle API Request/Response Models ──────────────────────────────────────
+
+
+class BattleActionRequest(BaseModel):
+    """Request body for `POST /api/battle/action`."""
+
+    run_id: str
+    action: Literal["attack", "defend", "ability"]
+    ability_id: Optional[str] = None
+
+
+class BattleActionResponse(BaseModel):
+    """Response for `POST /api/battle/action`.
+
+    `events` is a transient, human-readable turn log for the frontend to
+    display; it is never persisted to the database.
+    """
+
+    game_state: GameState
+    cat: CatResponse  # player's cat — response-only, not persisted into game_run.state
+    revival: bool = False
+    game_over: bool = False
+    events: list[str] = Field(default_factory=list)
+
+
+class BattleStateResponse(BaseModel):
+    """Response for `POST /api/battle/start` — the current persisted state."""
+
+    game_state: GameState
+    cat: CatResponse  # player's cat — response-only, not persisted into game_run.state
+
+
+# ─── Data API Request/Response Models ────────────────────────────────────────
+
+
+class CreateGameRunResponse(BaseModel):
+    """Response for `POST /api/game-runs`.
+
+    A freshly created game run always starts in the DIGITIZING status.
+    """
+
+    run_id: str
+    status: GameStatus  # always DIGITIZING on creation
+
+
+class UpdateNoteRequest(BaseModel):
+    """Request body for `PATCH /api/cats/{cat_id}/note`.
+
+    `note` is the personal note text; the ≤500 char limit is enforced
+    server-side in the endpoint (Requirement 23.4).
+    """
+
+    note: str

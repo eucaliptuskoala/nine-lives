@@ -1,5 +1,5 @@
 import { authFetch } from "./authFetch";
-import type { GameState } from "../types/game";
+import type { GameState, Cat } from "../types/game";
 
 /**
  * Battle API client. Both endpoints REQUIRE a valid Supabase JWT, so every call
@@ -22,11 +22,13 @@ export interface BattleActionRequest {
 /** Response from `POST /api/battle/start`. */
 export interface BattleStateResponse {
   game_state: GameState;
+  cat: Cat;
 }
 
 /** Response from `POST /api/battle/action`. */
 export interface BattleActionResponse {
   game_state: GameState;
+  cat: Cat;
   revival: boolean;
   game_over: boolean;
   events: string[];

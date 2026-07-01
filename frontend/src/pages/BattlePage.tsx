@@ -1,114 +1,57 @@
-import { useEffect, useState, useCallback, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { Phase } from "../types/game";
-import type { GameState } from "../types/game";
 import { useGameState } from "../hooks/useGameState";
 import BattleArena from "../components/BattleArena";
 import ActionButtons from "../components/ActionButtons";
 import FarewellScreen from "../components/FarewellScreen";
-import { MOCK_CAT } from "../data/mockCat";
-
-const STORAGE_KEY = "nl-battle-state";
 
 function BattlePage() {
   const navigate = useNavigate();
-  const { state, initRound, attack, defend, useAbility, resolveEnemyTurn, setState } =
-    useGameState();
-  const [statusText, setStatusText] = useState("Prepare for battle!");
-  const [actionCooldown, setActionCooldown] = useState(false);
-  const cooldownTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const { runId } = useParams<{ runId: string }>();
+  const {
+    gameState,
+    cat,
+    isLoading,
+    error,
+    revival,
+    gameOver,
+    events,
+    startBattle,
+    submitAction,
+  } = useGameState();
 
-  const isGameOver = state !== null && state.lives_remaining <= 0 && state.player_hp <= 0;
-  const canAct = state?.phase === Phase.PLAYER_TURN && !actionCooldown;
-
+  // Kick off (or resume) the battle on mount. `start` is idempotent on the
+  // backend, so a page refresh restores the persisted state.
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved) as GameState;
-        setState(parsed);
-        setStatusText("Battle resumed!");
-        return;
-      } catch { /* fall through to init */ }
+    if (runId) {
+      startBattle(runId);
     }
-    initRound(
-      MOCK_CAT.current_hp,
-      MOCK_CAT.max_hp,
-      MOCK_CAT.mana,
-      MOCK_CAT.max_mana,
-      MOCK_CAT.lives_remaining,
-      1
-    );
-  }, []);
+  }, [runId, startBattle]);
 
+  // The backend is the source of truth for game-over; navigate to the memorial
+  // once it reports the run has ended.
   useEffect(() => {
-    if (state && !isGameOver) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    if (gameOver) {
+      navigate("/memorial");
     }
-  }, [state, isGameOver]);
+  }, [gameOver, navigate]);
 
-  useEffect(() => {
-    if (state?.phase === Phase.ENEMY_TURN) {
-      setStatusText("Enemy is attacking...");
-      const timer = setTimeout(() => {
-        resolveEnemyTurn();
-      }, 1200);
-      return () => clearTimeout(timer);
+  // Loading state: no state yet and no error to show.
+  if (!gameState || !cat) {
+    if (error) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white px-6 text-center gap-4">
+          <p className="text-red-400">{error}</p>
+          <button
+            onClick={() => runId && startBattle(runId)}
+            className="px-6 py-3 rounded-lg bg-gray-700 hover:bg-gray-600 font-medium transition-colors"
+          >
+            Try Again
+          </button>
+        </div>
+      );
     }
-    if (state?.phase === Phase.PLAYER_TURN && !actionCooldown) {
-      setStatusText("Your turn!");
-    }
-  }, [state?.phase, actionCooldown]);
-
-  const startCooldown = useCallback(() => {
-    setActionCooldown(true);
-    if (cooldownTimer.current) clearTimeout(cooldownTimer.current);
-    cooldownTimer.current = setTimeout(() => {
-      setActionCooldown(false);
-    }, 1200);
-  }, []);
-
-  const handleAttack = useCallback(() => {
-    if (!canAct) return;
-    setStatusText("You attack!");
-    attack();
-    startCooldown();
-  }, [canAct, attack, startCooldown]);
-
-  const handleDefend = useCallback(() => {
-    if (!canAct) return;
-    setStatusText("You brace for impact!");
-    defend();
-    startCooldown();
-  }, [canAct, defend, startCooldown]);
-
-  const handleUseAbility = useCallback(
-    (abilityId: string) => {
-      if (!canAct) return;
-      const ability = MOCK_CAT.abilities.find((a) => a.id === abilityId);
-      if (!ability) return;
-      setStatusText(`You use ${ability.name}!`);
-      useAbility(abilityId, MOCK_CAT.abilities);
-      startCooldown();
-    },
-    [canAct, useAbility, startCooldown]
-  );
-
-  const handleClearStorage = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY);
-    navigate("/memorial");
-  }, [navigate]);
-
-  if (isGameOver) {
-    return (
-      <FarewellScreen
-        catName={MOCK_CAT.name}
-        onGoToMemorial={handleClearStorage}
-      />
-    );
-  }
-
-  if (!state) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-900 text-white">
         <p className="text-gray-400">Loading...</p>
@@ -116,38 +59,66 @@ function BattlePage() {
     );
   }
 
+  // Game over is handled via navigation; render a farewell in the meantime.
+  if (gameOver) {
+    return (
+      <FarewellScreen
+        catName={cat.name}
+        onGoToMemorial={() => navigate("/memorial")}
+      />
+    );
+  }
+
+  const isPlayerTurn = gameState.phase === Phase.PLAYER_TURN;
+  const canAct = isPlayerTurn && !isLoading;
+
+  // Derive the status/turn-log text from the events returned by the API, with
+  // sensible fallbacks for loading and idle states.
+  const latestEvent = events.length > 0 ? events[events.length - 1] : null;
+  const statusText = error
+    ? error
+    : isLoading
+    ? "Resolving turn..."
+    : latestEvent ?? "Your turn!";
+
   return (
     <BattleArena
       player={{
-        name: MOCK_CAT.name,
-        classType: MOCK_CAT.class,
-        hp: state.player_hp,
-        maxHp: state.player_max_hp,
-        mana: state.player_mana,
-        maxMana: state.player_max_mana,
-        isDefending: state.player_is_defending,
-        shield: state.player_shield,
-        lives: state.lives_remaining,
+        name: cat.name,
+        classType: cat.class,
+        hp: gameState.player_hp,
+        maxHp: gameState.player_max_hp,
+        mana: gameState.player_mana,
+        maxMana: gameState.player_max_mana,
+        isDefending: gameState.player_is_defending,
+        shield: gameState.player_shield,
+        lives: gameState.lives_remaining,
       }}
       enemy={{
-        name: state.enemy.name,
+        name: gameState.enemy.name,
         classType: "STRENGTH",
-        hp: state.enemy.hp,
-        maxHp: state.enemy.max_hp,
-        mana: state.enemy.mana,
-        maxMana: state.enemy.max_mana,
+        hp: gameState.enemy.hp,
+        maxHp: gameState.enemy.max_hp,
+        mana: gameState.enemy.mana,
+        maxMana: gameState.enemy.max_mana,
+        shield: gameState.enemy.shield,
       }}
-      phase={state.phase}
-      currentRound={state.current_round}
+      phase={gameState.phase}
+      currentRound={gameState.current_round}
       statusText={statusText}
     >
+      {revival && (
+        <div className="mb-3 rounded-lg bg-purple-900/60 border border-purple-500 px-4 py-2 text-center text-sm text-purple-100">
+          {"\u2728"} A life was lost — {cat.name} has been revived!
+        </div>
+      )}
       <ActionButtons
-        abilities={MOCK_CAT.abilities}
-        cooldowns={state.player_ability_cooldowns}
-        mana={state.player_mana}
-        onAttack={handleAttack}
-        onDefend={handleDefend}
-        onUseAbility={handleUseAbility}
+        abilities={cat.abilities}
+        cooldowns={gameState.player_ability_cooldowns}
+        mana={gameState.player_mana}
+        onAttack={() => submitAction("attack")}
+        onDefend={() => submitAction("defend")}
+        onUseAbility={(abilityId) => submitAction("ability", abilityId)}
         disabled={!canAct}
       />
     </BattleArena>

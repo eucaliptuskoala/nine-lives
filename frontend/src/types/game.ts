@@ -79,7 +79,8 @@ export interface Enemy {
   hp: number;
   max_hp: number;
   atk: number;
-  def: number;
+  defence: number;
+  shield: number;
   spd: number;
   mana: number;
   max_mana: number;

@@ -118,6 +118,8 @@ This document specifies the functional requirements for the complete implementat
 8. WHEN persistence succeeds, THE Battle_API SHALL return the complete initial Game_State to the frontend
 9. WHEN the Battle Page receives the Game_State response, THE frontend SHALL render the battle scene from the returned state without performing any combat calculations
 10. IF a game_run already has a persisted Game_State, THEN THE Battle_API SHALL return the existing state instead of creating a new one
+11. WHEN the Battle_API returns the initial Game_State from `POST /api/battle/start`, THE Battle_API SHALL include the player Cat data (name, class, stats, avatar, and abilities) in the response payload so the frontend can render the player's identity and ability list
+12. THE Battle_API SHALL include the player Cat in the `POST /api/battle/start` response payload only and SHALL exclude the Cat from game_run.state, because the Cat is static data and not part of the persisted Game_State
 
 ### Requirement 8: Enemy Generation
 
@@ -149,6 +151,8 @@ This document specifies the functional requirements for the complete implementat
 5. WHEN the player attack resolves, THE Battle_System SHALL immediately resolve the enemy turn (see Requirement 15) before responding
 6. WHEN the full turn resolves, THE Battle_System SHALL persist the updated Game_State and return it to the frontend
 7. THE frontend SHALL NOT compute attack damage; it SHALL only render the Game_State returned by the Battle_API
+8. WHEN the Battle_API returns a `POST /api/battle/action` response for any action type (attack, defend, or ability), THE Battle_API SHALL include the player Cat data (name, class, stats, avatar, and abilities) in the response payload alongside the Game_State, game_over flag, revival flag, and events, so the frontend can render the player's identity and ability list
+9. THE Battle_API SHALL include the player Cat in the `POST /api/battle/action` response payload only and SHALL exclude the Cat from game_run.state, consistent with the Battle_System being the sole writer of Game_State, because the Cat is static data and not part of the persisted Game_State
 
 ### Requirement 10: Defend Action
 
@@ -174,7 +178,7 @@ This document specifies the functional requirements for the complete implementat
 3. WHEN checking ability availability, THE Battle_System SHALL verify the ability cooldown is 0
 4. WHEN an ability is used, THE Battle_System SHALL subtract the mana cost from player mana
 5. WHEN an ability is used, THE Battle_System SHALL set the ability cooldown to its maximum cooldown value
-6. WHEN an ability of type DMG is used, THE Battle_System SHALL apply the ability damage directly to the target (ignoring defence)
+6. WHEN an ability of type DMG is used, THE Battle_System SHALL apply the ability damage to the target ignoring the target's defence, with the target's shield absorbing the damage before it reaches HP
 7. WHEN an ability of type HEAL is used, THE Battle_System SHALL increase player HP by the ability value without exceeding max HP
 8. WHEN an ability of type SHIELD is used, THE Battle_System SHALL add the ability value to player_shield
 9. IF player mana is less than the ability cost or cooldown is greater than 0, THEN THE Battle_System SHALL reject the action and return an error response without modifying Game_State
@@ -204,7 +208,7 @@ This document specifies the functional requirements for the complete implementat
 
 ### Requirement 14: Shield Mechanics
 
-**User Story:** As a user, I want shields to absorb damage before affecting my HP, so that shield abilities provide meaningful protection.
+**User Story:** As a user, I want shields to absorb damage before affecting HP for both my cat and the enemy, so that shield abilities provide meaningful protection on both sides symmetrically.
 
 #### Acceptance Criteria
 
@@ -212,6 +216,10 @@ This document specifies the functional requirements for the complete implementat
 2. WHEN player_shield is greater than or equal to incoming damage, THE Battle_System SHALL reduce shield by the full damage amount and apply 0 damage to HP
 3. WHEN player_shield is less than incoming damage, THE Battle_System SHALL reduce shield to 0 and apply the remaining damage to HP
 4. WHEN the player is defending and has a shield, THE Battle_System SHALL apply the defend reduction before shield absorption
+5. WHEN incoming damage is applied to the enemy, THE Battle_System SHALL first subtract damage from the enemy's shield, then apply the remaining damage to enemy HP, mirroring the player shield behavior
+6. WHEN the enemy's shield is greater than or equal to incoming damage, THE Battle_System SHALL reduce the enemy's shield by the full damage amount and apply 0 damage to enemy HP
+7. WHEN the enemy's shield is less than incoming damage, THE Battle_System SHALL reduce the enemy's shield to 0 and apply the remaining damage to enemy HP
+8. WHEN damage reaches the enemy from a basic attack or from a DMG or TRUE_DMG ability, THE Battle_System SHALL apply the enemy's shield absorption before enemy HP
 
 ### Requirement 15: Enemy AI Turn
 
@@ -223,7 +231,7 @@ This document specifies the functional requirements for the complete implementat
 2. WHEN resolving the enemy turn, THE Battle_System SHALL first regenerate enemy mana and tick enemy cooldowns
 3. WHEN the enemy has sufficient mana and an available ability (cooldown = 0), THE Battle_System SHALL prioritize using the special (ultimate) ability if available, otherwise select randomly from available regular abilities
 4. WHEN no ability is available, THE Battle_System SHALL fall back to a basic attack
-5. WHEN the enemy uses an ability, THE Battle_System SHALL follow the same rules as player ability usage (mana cost, cooldown, effect application)
+5. WHEN the enemy uses an ability, THE Battle_System SHALL follow the same rules as player ability usage (mana cost, cooldown, effect application), including adding the ability value to the enemy's shield when the ability is of type SHIELD
 6. WHEN the enemy uses a basic attack, THE Battle_System SHALL calculate damage using the formula max(enemy_atk - player_defence * 0.5, 1)
 7. WHEN the enemy action completes, THE Battle_System SHALL resolve any death/revival logic (see Requirement 17) and include the final Game_State in the Battle_API response
 
@@ -375,7 +383,7 @@ This document specifies the functional requirements for the complete implementat
 1. THE Battle_System SHALL always calculate basic attack damage as max(attacker_dmg - defender_defence * 0.5, 1)
 2. THE Battle_System SHALL always guarantee at least 1 damage from basic attacks
 3. WHEN defend is active, THE Battle_System SHALL always reduce incoming damage by exactly 50%
-4. WHEN abilities deal damage, THE Battle_System SHALL always apply the full ability damage value without reduction
+4. WHEN abilities deal damage, THE Battle_System SHALL apply the ability damage bypassing the target's defence reduction, while the target's shield still absorbs the damage before it reaches HP
 5. ALL combat calculations SHALL occur on the backend; the frontend SHALL treat Game_State values as the authoritative source of truth
 
 ### Requirement 29: State Validation
