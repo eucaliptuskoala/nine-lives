@@ -128,6 +128,7 @@ export interface Cat extends Creature {
   wins: number;
   death_date: string | null;
   personal_note: string | null;
+  personality: string | null;
   created_at: string;
 }
 

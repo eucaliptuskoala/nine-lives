@@ -16,6 +16,8 @@ function BattlePage() {
     error,
     revival,
     gameOver,
+    sessionExpired,
+    runEnded,
     events,
     startBattle,
     submitAction,
@@ -36,6 +38,31 @@ function BattlePage() {
       navigate("/memorial");
     }
   }, [gameOver, navigate]);
+
+  // Session expired mid-battle (401): the hook has already persisted the run to
+  // session storage. Redirect to login, passing the battle path so LoginPage's
+  // post-login redirect returns the user to their battle.
+  useEffect(() => {
+    if (sessionExpired) {
+      navigate("/login", { state: { from: `/battle/${runId}` } });
+    }
+  }, [sessionExpired, navigate, runId]);
+
+  // Run already ended (409): the spec says to OFFER navigation rather than
+  // auto-redirect, so show a clear message with a button to the memorial.
+  if (runEnded) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white px-6 text-center gap-4">
+        <p className="text-lg text-gray-200">This game has already ended.</p>
+        <button
+          onClick={() => navigate("/memorial")}
+          className="px-6 py-3 rounded-lg bg-purple-700 hover:bg-purple-600 font-medium transition-colors"
+        >
+          Go to Memorial
+        </button>
+      </div>
+    );
+  }
 
   // Loading state: no state yet and no error to show.
   if (!gameState || !cat) {

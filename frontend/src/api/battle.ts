@@ -39,6 +39,7 @@ export function startBattle(runId: string): Promise<BattleStateResponse> {
   return authFetch<BattleStateResponse>("/api/battle/start", {
     method: "POST",
     body: JSON.stringify({ run_id: runId }),
+    timeoutMs: 10000,
   });
 }
 
@@ -49,5 +50,6 @@ export function submitAction(
   return authFetch<BattleActionResponse>("/api/battle/action", {
     method: "POST",
     body: JSON.stringify(body),
+    timeoutMs: 5000,
   });
 }

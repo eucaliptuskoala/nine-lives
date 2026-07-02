@@ -87,6 +87,7 @@ const baseCat: Cat = {
   wins: 0,
   death_date: null,
   personal_note: null,
+  personality: null,
   created_at: "2024-01-01T00:00:00Z",
 };
 
@@ -101,6 +102,8 @@ function hookReturn(overrides: Partial<UseGameStateReturn> = {}): UseGameStateRe
     error: null,
     revival: false,
     gameOver: false,
+    sessionExpired: false,
+    runEnded: false,
     events: [],
     startBattle,
     submitAction,

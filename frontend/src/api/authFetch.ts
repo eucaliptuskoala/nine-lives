@@ -31,17 +31,34 @@ export class ApiError extends Error {
  * Note: `POST /api/digitize` is an open mock endpoint and intentionally does NOT
  * use this helper (see `digitize.ts`).
  *
+/** Default request timeout (ms) applied when the caller does not specify one. */
+export const DEFAULT_TIMEOUT_MS = 15000;
+
+/** Options accepted by {@link authFetch} on top of the standard `fetch` options. */
+export interface AuthFetchOptions extends RequestInit {
+  /**
+   * Abort the request after this many milliseconds and throw an
+   * {@link ApiError} with status 408. Defaults to {@link DEFAULT_TIMEOUT_MS}.
+   */
+  timeoutMs?: number;
+}
+
+/**
  * @param path API path beginning with `/` (e.g. `/api/battle/start`).
- * @param options Standard `fetch` options. The `Authorization` header is added
- *   automatically; a JSON `Content-Type` is added when a body is present unless
- *   the caller already set one or the body is `FormData`.
+ * @param options Standard `fetch` options plus an optional `timeoutMs`. The
+ *   `Authorization` header is added automatically; a JSON `Content-Type` is
+ *   added when a body is present unless the caller already set one or the body
+ *   is `FormData`.
  * @returns The parsed JSON response body (or `undefined` for empty `204` responses).
- * @throws {ApiError} When no active session/token exists, or when the response is non-ok.
+ * @throws {ApiError} When no active session/token exists, when the request times
+ *   out (status 408), or when the response is non-ok.
  */
 export async function authFetch<T = unknown>(
   path: string,
-  options: RequestInit = {},
+  options: AuthFetchOptions = {},
 ): Promise<T> {
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, signal, ...rest } = options;
+
   const {
     data: { session },
   } = await supabase.auth.getSession();
@@ -51,21 +68,50 @@ export async function authFetch<T = unknown>(
     throw new ApiError(401, "Not authenticated: no active session token");
   }
 
-  const headers = new Headers(options.headers);
+  const headers = new Headers(rest.headers);
   headers.set("Authorization", `Bearer ${token}`);
 
   // Default to JSON content type when sending a non-FormData body and the caller
   // has not already specified one.
   if (
-    options.body !== undefined &&
-    options.body !== null &&
-    !(options.body instanceof FormData) &&
+    rest.body !== undefined &&
+    rest.body !== null &&
+    !(rest.body instanceof FormData) &&
     !headers.has("Content-Type")
   ) {
     headers.set("Content-Type", "application/json");
   }
 
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  // Abort the request once the timeout elapses. If the caller passed their own
+  // signal, honor it too by aborting our controller when theirs fires.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  if (signal) {
+    if (signal.aborted) {
+      controller.abort();
+    } else {
+      signal.addEventListener("abort", () => controller.abort(), {
+        once: true,
+      });
+    }
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...rest,
+      headers,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    // Distinguish a timeout/abort from other network errors.
+    if (controller.signal.aborted) {
+      throw new ApiError(408, "Request timed out. Please try again.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!res.ok) {
     const body = await safeParseBody(res);

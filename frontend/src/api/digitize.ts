@@ -37,10 +37,26 @@ export async function uploadCatPhoto(
     form.append("personality", params.personality);
   }
 
-  const res = await fetch(`${API_BASE}/api/digitize`, {
-    method: "POST",
-    body: form,
-  });
+  // Digitization can be slow (image processing on the backend); allow up to 30s
+  // before aborting and surfacing a friendly timeout message.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/digitize`, {
+      method: "POST",
+      body: form,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (controller.signal.aborted) {
+      throw new Error("Digitization timed out. Please try again.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!res.ok) {
     let message = `Digitization failed (${res.status})`;

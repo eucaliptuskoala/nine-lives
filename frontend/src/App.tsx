@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./hooks/useSupabase";
 import AuthGuard from "./components/AuthGuard";
+import ErrorBoundary from "./components/ErrorBoundary";
 import DigitizePage from "./pages/DigitizePage";
 import BattlePage from "./pages/BattlePage";
 import MemorialPage from "./pages/MemorialPage";
@@ -11,29 +12,42 @@ function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/login" element={<LoginPage />} />
+          <Route
+            path="/login"
+            element={
+              <ErrorBoundary>
+                <LoginPage />
+              </ErrorBoundary>
+            }
+          />
           <Route
             path="/"
             element={
-              <AuthGuard>
-                <DigitizePage />
-              </AuthGuard>
+              <ErrorBoundary>
+                <AuthGuard>
+                  <DigitizePage />
+                </AuthGuard>
+              </ErrorBoundary>
             }
           />
           <Route
             path="/battle/:runId"
             element={
-              <AuthGuard>
-                <BattlePage />
-              </AuthGuard>
+              <ErrorBoundary>
+                <AuthGuard>
+                  <BattlePage />
+                </AuthGuard>
+              </ErrorBoundary>
             }
           />
           <Route
             path="/memorial"
             element={
-              <AuthGuard>
-                <MemorialPage />
-              </AuthGuard>
+              <ErrorBoundary>
+                <AuthGuard>
+                  <MemorialPage />
+                </AuthGuard>
+              </ErrorBoundary>
             }
           />
         </Routes>

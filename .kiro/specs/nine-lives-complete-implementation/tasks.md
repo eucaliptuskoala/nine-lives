@@ -242,15 +242,15 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     - Navigation to `/memorial` when `gameOver=true`
     - Error message renders and buttons re-enable when `error` is set
 
-- [ ] 6. Update DigitizePage to create a game run and launch a battle
-  - [ ] 6.1 Backend: persist personality + accept digitization inputs
+- [x] 6. Update DigitizePage to create a game run and launch a battle
+  - [x] 6.1 Backend: persist personality + accept digitization inputs
     - Add a DB migration to `supabase/migration.sql` (and note it MUST be applied to the Supabase database): `ALTER TABLE cat ADD COLUMN personality TEXT` with a `CHECK (personality IS NULL OR length(personality) <= 500)` constraint
     - Update `models/schemas.py`: add `personality: Optional[str] = None` to `CatResponse` (and to the `Cat`/creature representation as appropriate) so the field round-trips through serialization/deserialization
     - Update `routers/digitize.py`: the endpoint already takes `cat_name`; add an optional `personality: Optional[str] = Form(None)` form field; persist `personality` on the inserted `cat` record; include it in the returned `CatResponse`
     - Keep the mock stat generation unchanged — the mock still ignores `personality` for stat generation but stores it on the cat record so the real pipeline can use it later
     - _Requirements: 1.9, 4.11, 4.12, 6.2, 6.7, 30.1_
 
-  - [ ] 6.2 Frontend: DigitizePage inputs + flow
+  - [x] 6.2 Frontend: DigitizePage inputs + flow
     - Update `frontend/src/api/digitize.ts` `uploadCatPhoto` to send `file`, `game_run_id`, `user_id`, `cat_name`, and optional `personality` as multipart form fields (keep it a plain `fetch` — digitize stays an open mock, no auth token required)
     - Implement `frontend/src/pages/DigitizePage.tsx`:
       - A required cat-name text input (non-empty, ≤100 chars)
@@ -263,64 +263,64 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     - The frontend must NOT insert into Supabase directly; the Supabase client is used only for the auth token/session
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 7.1, 26.1, 26.2, 27.1, 27.2, 27.3, 27.4_
 
-  - [ ]* 6.3 Write frontend tests for DigitizePage (Vitest + @testing-library/react)
+  - [x]* 6.3 Write frontend tests for DigitizePage (Vitest + @testing-library/react)
     - Invalid file (wrong type or >10MB) → error shown and submit disabled
     - Missing/empty cat name → submit disabled
     - Happy path → `createGameRun` called, then `uploadCatPhoto` called with cat name, personality, and user id, then navigate to `/battle/:runId`
     - Digitize failure → error shown and retry reuses the existing `run_id` (does not create a new run)
     - _Requirements: 1.1, 1.4, 1.5, 1.7, 1.9, 26.1, 26.2, 27.1, 27.2, 27.3, 27.4_
 
-- [ ] 7. Memorial system
-  - [ ] 7.1 Update MemorialPage to load and display fallen cats
+- [x] 7. Memorial system
+  - [x] 7.1 Update MemorialPage to load and display fallen cats
     - Load all fallen cats (status=MEMORIAL) for the current user via the backend `GET /api/cats/memorial` endpoint (with auth token) — **not** via a direct Supabase query
     - Display: name, breed, class, avatar, stats, abilities, lore, death_date, wins, personal_note
     - Implement UI for adding/editing personal notes; on save call the backend `PATCH /api/cats/{cat_id}/note` endpoint (with auth token); validate ≤500 chars client-side (authoritative validation is server-side)
     - Handle empty state
     - _Requirements: 22.1–22.5, 23.1–23.3, 24.1_
 
-  - [ ] 7.2 Implement `hooks/useMemorial.ts`
+  - [x] 7.2 Implement `hooks/useMemorial.ts`
     - Load memorial cats via `GET /api/cats/memorial` (with auth token) — no direct Supabase reads
     - `updateNote(catId, note)` — client-side ≤500 char pre-check, then call `PATCH /api/cats/{cat_id}/note` (with auth token); authoritative validation is server-side — no direct Supabase writes
     - The Supabase client is used only for obtaining the auth token/session
     - `loading` and `error` states
     - _Requirements: 22.1, 22.2, 23.1–23.3, 24.1_
 
-  - [ ]* 7.3 Write integration test for memorial
+  - [x]* 7.3 Write integration test for memorial
     - Load cats, add/edit notes, 500-char limit, empty state display
 
-- [ ] 8. Error handling and recovery
-  - [ ] 8.1 Add comprehensive error handling
+- [x] 8. Error handling and recovery
+  - [x] 8.1 Add comprehensive error handling
     - React error boundaries on all pages
     - User-friendly error messages for all API failures
     - Timeout handling: 30s for digitize, 5s for battle actions
     - _Requirements: 26.1, 26.2, 26.3, 26.4_
 
-  - [ ] 8.2 Implement Battle API error recovery on frontend
+  - [x] 8.2 Implement Battle API error recovery on frontend
     - On `POST /api/battle/action` error: display message, re-enable buttons for retry
     - Handle 401 (redirect to login, preserve game_run_id in session storage)
     - Handle 409 (display "game already ended", offer navigation to Memorial)
     - _Requirements: 20.4, 26.3, 26.4_
 
-- [ ] 9. UI polish and final integration
+- [x] 9. UI polish and final integration
   - [ ] 9.1 Verify initial ability cooldown behavior end-to-end
     - Confirm `POST /api/battle/start` sets player special cooldowns to max (no first-turn ultimate)
     - Confirm new enemies mid-run also have special cooldown at max
     - Confirm regular ability cooldowns start at 0
     - _Requirements: 7.5, 8.9_
 
-  - [ ] 9.2 Add missing UI features and polish
+  - [x] 9.2 Add missing UI features and polish
     - Loading states for all async operations
     - Animations for combat actions (framer-motion)
     - Revival notification UI (triggered by `revival` flag from API response)
     - Round completion celebration
     - Responsive design for mobile
 
-  - [ ] 9.3 Implement performance optimizations
+  - [x] 9.3 Implement performance optimizations
     - React.memo for CatCard and HealthBar components
     - Lazy load MemorialPage
     - _Requirements: 27.1, 27.2_
 
-  - [ ]* 9.4 Write E2E tests for complete game flow
+  - [x]* 9.4 Write E2E tests for complete game flow
     - Full flow: digitize (mock) → battle → die 9 times → memorial
     - Page refresh mid-battle (state restoration via `POST /api/battle/start`)
     - All ability types (DMG, HEAL, SHIELD)

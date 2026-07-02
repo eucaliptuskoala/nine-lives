@@ -99,7 +99,7 @@ ALTER TABLE ability ADD CONSTRAINT ability_lore_length CHECK (length(lore) <= 20
 ALTER TABLE ability ADD CONSTRAINT ability_description_length CHECK (length(description) <= 200);
 
 -- Game run constraints
-ALTER TABLE game_run ADD CONSTRAINT game_run_round_positive CHECK (current_round >= 1);
+ALTER TABLE game_run ADD CONSTRAINT game_run_round_positive CHECK (current_round >= 0);
 
 -- Row-Level Security
 ALTER TABLE cat ENABLE ROW LEVEL SECURITY;
