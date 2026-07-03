@@ -1,6 +1,10 @@
 import { useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
+import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/8bit/button";
+import { Input } from "@/components/ui/8bit/input";
+import { Textarea } from "@/components/ui/8bit/textarea";
 import { useAuth } from "../hooks/useSupabase";
 import { createGameRun } from "../api/data";
 import { uploadCatPhoto } from "../api/digitize";
@@ -117,17 +121,17 @@ function DigitizePage() {
     <div className="flex flex-col items-center justify-center min-h-screen gap-6 px-4 py-10">
       <div className="w-full max-w-md flex flex-col gap-6">
         <div className="flex flex-col items-center gap-2 text-center">
-          <h1 className="text-3xl font-bold">Digitize Your Cat</h1>
+          <h1 className="retro text-2xl font-bold">Digitize Your Cat</h1>
           <p className="text-gray-500">
             Upload a photo and give your cat a name to enter the arena.
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
           {/* Cat name */}
-          <label className="flex flex-col gap-1 text-sm font-medium">
+          <label className="flex flex-col gap-2 text-sm font-medium">
             Cat name
-            <input
+            <Input
               type="text"
               value={catName}
               onChange={(e) => setCatName(e.target.value)}
@@ -135,7 +139,7 @@ function DigitizePage() {
               required
               disabled={isProcessing}
               placeholder="e.g. Sir Whiskers"
-              className="rounded-md border border-gray-300 px-3 py-2 text-base focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+              font="normal"
             />
             {nameTooLong && (
               <span className="text-sm text-red-600">
@@ -167,15 +171,16 @@ function DigitizePage() {
           </label>
 
           {/* Personality */}
-          <label className="flex flex-col gap-1 text-sm font-medium">
+          <label className="flex flex-col gap-2 text-sm font-medium">
             Personality (optional)
-            <textarea
+            <Textarea
               value={personality}
               onChange={(e) => setPersonality(e.target.value)}
               rows={4}
               disabled={isProcessing}
               placeholder="Describe your cat's personality to shape their stats and abilities."
-              className="resize-none rounded-md border border-gray-300 px-3 py-2 text-base focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+              font="normal"
+              className="resize-none"
             />
             <span
               className={`self-end text-xs ${
@@ -197,17 +202,35 @@ function DigitizePage() {
             </p>
           )}
 
-          <button
+          <Button
             type="submit"
             disabled={!canSubmit || isProcessing}
-            className="rounded-md bg-indigo-600 px-4 py-2 font-medium text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="mt-2 h-auto bg-indigo-600 px-4 py-2 text-[10px] text-white"
           >
-            {isProcessing
-              ? "Digitizing..."
-              : status === "error"
-                ? "Retry"
-                : "Digitize"}
-          </button>
+            {isProcessing ? (
+              <span className="inline-flex items-center gap-2">
+                Digitizing...
+                <span className="inline-flex gap-0.5" aria-hidden="true">
+                  {[0, 1, 2].map((i) => (
+                    <motion.span
+                      key={i}
+                      className="inline-block h-1.5 w-1.5 bg-white"
+                      animate={{ opacity: [0.2, 1, 0.2] }}
+                      transition={{
+                        duration: 0.8,
+                        repeat: Infinity,
+                        delay: i * 0.15,
+                      }}
+                    />
+                  ))}
+                </span>
+              </span>
+            ) : status === "error" ? (
+              "Retry"
+            ) : (
+              "Digitize"
+            )}
+          </Button>
         </form>
       </div>
     </div>

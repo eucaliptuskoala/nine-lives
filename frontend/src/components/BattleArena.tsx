@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import type { Phase } from "../types/game";
 import CatCard from "./CatCard";
 import LivesDisplay from "./LivesDisplay";
+import { Card } from "@/components/ui/8bit/card";
 import type { Class } from "../types/game";
 
 interface BattleArenaProps {
@@ -29,6 +31,7 @@ interface BattleArenaProps {
   phase: Phase;
   currentRound: number;
   statusText: string;
+  isResolving?: boolean;
   children: ReactNode;
 }
 
@@ -38,13 +41,14 @@ function BattleArena({
   phase,
   currentRound,
   statusText,
+  isResolving = false,
   children,
 }: BattleArenaProps) {
   return (
     <div className="flex flex-col min-h-screen bg-gray-900 text-white">
-      <div className="flex-1 flex flex-col max-w-2xl mx-auto w-full px-4 py-6 gap-6">
+      <div className="flex-1 flex flex-col max-w-2xl mx-auto w-full px-3 sm:px-4 py-4 sm:py-6 gap-4 sm:gap-6">
         <div className="text-center">
-          <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+          <span className="retro text-[10px] font-medium text-gray-400 uppercase tracking-wider">
             Round {currentRound}
           </span>
         </div>
@@ -63,12 +67,44 @@ function BattleArena({
         </div>
 
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <p className="text-sm font-medium text-gray-300">{statusText}</p>
-            {phase === "ENEMY_TURN" as Phase && (
-              <span className="text-xs text-gray-500">Enemy is thinking...</span>
-            )}
-          </div>
+          <Card
+            font="normal"
+            className="bg-gray-800/60 border-gray-500 text-gray-200 w-full sm:w-auto"
+          >
+            <div className="px-6 py-4 text-center">
+              <AnimatePresence mode="wait">
+                <motion.p
+                  key={statusText}
+                  className="text-sm font-medium text-gray-300"
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  {statusText}
+                </motion.p>
+              </AnimatePresence>
+              {isResolving && (
+                <span className="mt-1 inline-flex gap-1" aria-hidden="true">
+                  {[0, 1, 2].map((i) => (
+                    <motion.span
+                      key={i}
+                      className="inline-block h-1.5 w-1.5 bg-gray-400"
+                      animate={{ opacity: [0.2, 1, 0.2] }}
+                      transition={{
+                        duration: 0.8,
+                        repeat: Infinity,
+                        delay: i * 0.15,
+                      }}
+                    />
+                  ))}
+                </span>
+              )}
+              {phase === "ENEMY_TURN" as Phase && (
+                <span className="text-xs text-gray-500">Enemy is thinking...</span>
+              )}
+            </div>
+          </Card>
         </div>
 
         <div className="space-y-3">

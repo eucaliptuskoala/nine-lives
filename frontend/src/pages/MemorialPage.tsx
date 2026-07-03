@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { motion } from "framer-motion";
 import { useMemorial } from "../hooks/useMemorial";
 import MemorialCatCard from "../components/MemorialCatCard";
 
@@ -20,10 +21,10 @@ function MemorialPage() {
   );
 
   return (
-    <div className="min-h-screen px-4 py-10">
+    <div className="min-h-screen px-4 py-8 sm:py-10">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-        <div className="flex items-center justify-between gap-4">
-          <h1 className="text-3xl font-bold text-white">Memorial</h1>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <h1 className="text-2xl sm:text-3xl font-bold text-white">Memorial</h1>
           {digitizeLink}
         </div>
 
@@ -37,7 +38,21 @@ function MemorialPage() {
         )}
 
         {loading ? (
-          <p role="status" className="text-gray-400">
+          <p role="status" className="flex items-center gap-2 text-gray-400">
+            <span className="inline-flex gap-1" aria-hidden="true">
+              {[0, 1, 2].map((i) => (
+                <motion.span
+                  key={i}
+                  className="inline-block h-2 w-2 bg-gray-400"
+                  animate={{ opacity: [0.2, 1, 0.2] }}
+                  transition={{
+                    duration: 0.9,
+                    repeat: Infinity,
+                    delay: i * 0.15,
+                  }}
+                />
+              ))}
+            </span>
             Loading fallen cats...
           </p>
         ) : cats.length === 0 ? (

@@ -1,4 +1,5 @@
 import { motion } from "framer-motion";
+import { Progress } from "@/components/ui/8bit/progress";
 
 interface ManaBarProps {
   current: number;
@@ -6,21 +7,27 @@ interface ManaBarProps {
 }
 
 function ManaBar({ current, max }: ManaBarProps) {
-  const ratio = Math.max(0, Math.min(1, current / max));
+  const ratio = max > 0 ? Math.max(0, Math.min(1, current / max)) : 0;
 
   return (
     <div className="w-full">
-      <div className="flex justify-between text-xs text-gray-400 mb-0.5">
+      <div className="flex justify-between text-xs text-gray-400 mb-1">
         <span>MP</span>
-        <span>{current}/{max}</span>
+        <motion.span
+          key={current}
+          initial={{ scale: 1 }}
+          animate={{ scale: [1.2, 1] }}
+          transition={{ duration: 0.25 }}
+        >
+          {current}/{max}
+        </motion.span>
       </div>
-      <div className="w-full h-2.5 bg-gray-700 rounded-full overflow-hidden">
-        <motion.div
-          className="h-full rounded-full bg-blue-500"
-          animate={{ width: `${ratio * 100}%` }}
-          transition={{ duration: 0.4, ease: "easeOut" }}
-        />
-      </div>
+      <Progress
+        variant="retro"
+        value={ratio * 100}
+        progressBg="bg-blue-500"
+        className="h-2.5"
+      />
     </div>
   );
 }

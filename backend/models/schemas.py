@@ -187,6 +187,17 @@ class CreateGameRunResponse(BaseModel):
     status: GameStatus  # always DIGITIZING on creation
 
 
+class ActiveGameRunResponse(BaseModel):
+    """Response for `GET /api/game-runs/active`.
+
+    Returns the authenticated user's most recent IN_PROGRESS game run whose
+    linked cat is still ALIVE, or `run_id=None`/`cat=None` when there is none.
+    """
+
+    run_id: Optional[str] = None
+    cat: Optional[CatResponse] = None
+
+
 class UpdateNoteRequest(BaseModel):
     """Request body for `PATCH /api/cats/{cat_id}/note`.
 

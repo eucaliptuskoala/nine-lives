@@ -24,6 +24,7 @@ from auth import CurrentUser
 from models.schemas import (
     Ability,
     AbilityType,
+    ActiveGameRunResponse,
     CatResponse,
     CatStatus,
     Class,
@@ -136,6 +137,62 @@ async def create_game_run(user: CurrentUser) -> CreateGameRunResponse:
 
     run_id = str(result.data[0]["id"])
     return CreateGameRunResponse(run_id=run_id, status=GameStatus.DIGITIZING)
+
+
+@router.get("/game-runs/active", response_model=ActiveGameRunResponse)
+async def get_active_game_run(user: CurrentUser) -> ActiveGameRunResponse:
+    """Return the authenticated user's active game run, if any (Req 24.6, 24.7).
+
+    Selects the user's IN_PROGRESS `game_run` rows (newest first) and returns the
+    most recent one whose linked cat still exists and is ALIVE, along with that
+    cat (abilities attached). Returns `run_id=None`/`cat=None` when there is no
+    such run. Ownership is enforced by filtering on `user_id`; RLS remains as a
+    defense-in-depth backstop.
+    """
+    supabase = get_supabase_client()
+
+    # Fetch the user's IN_PROGRESS runs, newest first.
+    try:
+        run_result = (
+            supabase.table("game_run")
+            .select("*")
+            .eq("user_id", user.user_id)
+            .eq("status", GameStatus.IN_PROGRESS.value)
+            .order("created_at", desc=True)
+            .execute()
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to load active game run: {exc}"
+        )
+
+    for run_row in run_result.data or []:
+        cat_id = run_row.get("cat_id")
+        if not cat_id:
+            continue
+
+        # Load the linked cat and verify it exists and is ALIVE.
+        try:
+            cat_result = (
+                supabase.table("cat").select("*").eq("id", cat_id).execute()
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500, detail=f"Failed to load active cat: {exc}"
+            )
+
+        if not cat_result.data:
+            continue
+
+        cat_row = cat_result.data[0]
+        if cat_row.get("status") != CatStatus.ALIVE.value:
+            continue
+
+        ability_rows = _load_abilities(supabase, str(cat_row["id"]))
+        cat = _db_row_to_cat_response(cat_row, ability_rows)
+        return ActiveGameRunResponse(run_id=str(run_row["id"]), cat=cat)
+
+    return ActiveGameRunResponse(run_id=None, cat=None)
 
 
 @router.get("/cats/memorial", response_model=list[CatResponse])

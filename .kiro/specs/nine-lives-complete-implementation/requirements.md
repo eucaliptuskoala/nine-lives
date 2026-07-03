@@ -27,6 +27,10 @@ This document specifies the functional requirements for the complete implementat
 - **Phase**: The current turn indicator (PLAYER_TURN or ENEMY_TURN)
 - **RLS**: Row Level Security policies that act as a defense-in-depth backstop at the database level. Primary data isolation is enforced by the backend API layer using the authenticated user's identity.
 - **Auth_Token**: A valid Supabase JWT that the frontend includes in every backend data and battle request. The frontend obtains the Auth_Token from the Supabase client, which it uses for authentication only. The backend verifies the token and confirms the user owns the requested resource before processing any operation.
+- **HomePage**: The public frontend landing page served at the `/` route. It adapts its content to the authentication state and never forces a redirect.
+- **BattlePage**: The protected frontend combat page served at the `/battle/{run_id}` route that renders the Game_State returned by the Battle_API.
+- **OverworldPage**: The protected frontend hub page served at the `/overworld` route, reached after the player wins a round, from which the player chooses where to go next.
+- **Active_Run**: A game_run with status IN_PROGRESS whose associated Cat has status ALIVE, as returned by the `GET /api/game-runs/active` endpoint.
 
 ## Requirements
 
@@ -90,13 +94,16 @@ This document specifies the functional requirements for the complete implementat
 
 ### Requirement 5: Avatar Image Generation
 
-**User Story:** As a user, I want the system to generate a stylized avatar for my cat, so that my character has a unique visual representation.
+**User Story:** As a user, I want the system to generate a stylized avatar for my cat in a consistent retro pixel-art style, so that my character has a unique visual representation that fits the retro 8-bit interface.
+
+**Context (non-normative):** The per-cat subject (breed, colors, class, personality) varies for each avatar, while the retro pixel-art style block is constant. Applying the same canonical style to every avatar keeps the digitized cats visually cohesive with the 8-bit (8bitcn) user interface.
 
 #### Acceptance Criteria
 
 1. WHEN an image prompt is available, THE Digitization_Pipeline SHALL call the Gemini 2.5 Flash API to generate an avatar image
 2. WHEN avatar generation completes, THE Digitization_Pipeline SHALL upload the image to Supabase storage
 3. WHEN the upload completes, THE Digitization_Pipeline SHALL return a public URL for the avatar
+4. WHEN generating a cat avatar, THE Digitization_Pipeline SHALL apply the canonical retro pixel-art style, defined as the fixed positive and negative style blocks in `docs/retro-avatar-prompt.md`, to the per-cat image prompt so that all generated avatars are visually consistent with the retro 8-bit user interface
 
 ### Requirement 6: Cat Record Persistence
 
@@ -350,6 +357,8 @@ This document specifies the functional requirements for the complete implementat
 3. WHEN the frontend requests game_runs through the backend, THE backend SHALL only return game_runs associated with the authenticated user's cats
 4. THE backend API layer SHALL be the primary enforcement point for data isolation, verifying resource ownership against the authenticated user before any read or write
 5. THE System SHALL configure RLS policies as a defense-in-depth backstop at the database level
+6. WHEN the frontend requests `GET /api/game-runs/active` with a valid Auth_Token, THE Data_API SHALL return the authenticated user's most recent IN_PROGRESS game_run whose Cat has status ALIVE as `{ run_id, cat }`, enforcing ownership by user_id
+7. IF the authenticated user has no Active_Run, THEN THE Data_API SHALL return `{ run_id: null, cat: null }`
 
 ### Requirement 25: Authentication
 
@@ -357,10 +366,12 @@ This document specifies the functional requirements for the complete implementat
 
 #### Acceptance Criteria
 
-1. WHEN a user accesses the Digitize Page, THE System SHALL verify the user has a valid authentication token
-2. WHEN a user accesses the Battle Page, THE System SHALL verify the user has a valid authentication token
-3. WHEN a user accesses the Memorial Page, THE System SHALL verify the user has a valid authentication token
-4. IF the authentication token is invalid or expired, THEN THE System SHALL redirect the user to the login page
+1. WHERE a route is the HomePage (`/`) or the Login Page (`/login`), THE System SHALL render the route publicly without requiring an authentication token
+2. WHEN a user accesses the Digitize Page at `/digitize`, THE System SHALL verify the user has a valid authentication token
+3. WHEN a user accesses the BattlePage, THE System SHALL verify the user has a valid authentication token
+4. WHEN a user accesses the Memorial Page, THE System SHALL verify the user has a valid authentication token
+5. WHEN a user accesses the OverworldPage, THE System SHALL verify the user has a valid authentication token
+6. IF the authentication token is invalid or expired, THEN THE System SHALL redirect the user to the login page
 
 ### Requirement 26: Error Recovery
 
@@ -428,3 +439,33 @@ This document specifies the functional requirements for the complete implementat
 2. THE Digitization_Pipeline SHALL ensure exactly 1 ability has is_special set to true
 3. WHEN the Battle_System loads a cat from the database, THE Battle_System SHALL verify the cat has exactly 4 abilities
 4. IF ability validation fails, THEN THE Battle_System SHALL return an error response and prevent battle actions
+
+### Requirement 32: Home / Landing Page
+
+**User Story:** As a user, I want a landing page, so that I can sign in or jump straight into playing.
+
+#### Acceptance Criteria
+
+1. THE System SHALL serve the `/` route publicly, rendered without the authentication guard
+2. THE HomePage SHALL display the game title "Nine Lives"
+3. WHEN the user is not authenticated, THE HomePage SHALL display a tagline and a "Sign In" control that navigates to `/login`
+4. WHEN the user is authenticated, THE HomePage SHALL display an intro and navigation controls labeled "New Game" that navigates to `/digitize` and "Memorial" that navigates to `/memorial`
+5. WHEN the authenticated user has an Active_Run, THE HomePage SHALL display a "Continue" control that navigates to `/battle/{run_id}`
+6. THE HomePage SHALL determine Active_Run status via the backend `GET /api/game-runs/active` endpoint rather than a direct database query
+
+### Requirement 33: Overworld Hub
+
+**User Story:** As a user, I want a hub after winning a battle, so that I can choose what to do next.
+
+**Context (non-normative):** The victory-to-Overworld transition is a frontend navigation change only. The Battle_System already advances the round and generates the next enemy within the same `POST /api/battle/action` response when the enemy is defeated (see Requirement 19); no combat or round mechanics change as a result of this requirement.
+
+#### Acceptance Criteria
+
+1. THE System SHALL protect the `/overworld` route with the authentication guard, requiring a valid authentication token
+2. WHEN the player defeats the enemy in a round, THE BattlePage SHALL display a dismissible victory popup
+3. WHEN the player dismisses the victory popup, THE System SHALL navigate to `/overworld`
+4. THE OverworldPage SHALL present a "Next Enemy" navigation node that navigates to `/battle/{run_id}`, resuming the current run
+5. THE OverworldPage SHALL present a "Memorial" navigation node that navigates to `/memorial`
+6. WHERE a "Rest" placeholder node is provided, THE OverworldPage SHALL render it as a disabled node
+7. THE OverworldPage SHALL resolve the current `run_id` via the backend `GET /api/game-runs/active` endpoint so that navigation works after a page refresh
+8. THE OverworldPage SHALL display a fullscreen background image sourced from the frontend assets folder

@@ -1,6 +1,9 @@
+import { memo, useEffect, useRef } from "react";
+import { motion, useAnimationControls } from "framer-motion";
 import type { Class } from "../types/game";
 import HealthBar from "./HealthBar";
 import ManaBar from "./ManaBar";
+import { Card } from "@/components/ui/8bit/card";
 
 interface CatCardProps {
   name: string;
@@ -32,43 +35,79 @@ function CatCard({
   shield,
   flip,
 }: CatCardProps) {
+  // React to HP changes with a short shake + flash so taking damage (or being
+  // healed) reads clearly. Purely presentational — no effect on data flow.
+  const controls = useAnimationControls();
+  const prevHp = useRef(hp);
+
+  useEffect(() => {
+    const prev = prevHp.current;
+    if (hp < prev) {
+      controls.start({
+        x: [0, -8, 8, -6, 6, -3, 0],
+        filter: [
+          "brightness(1)",
+          "brightness(1.9)",
+          "brightness(1)",
+        ],
+        transition: { duration: 0.45 },
+      });
+    } else if (hp > prev) {
+      controls.start({
+        filter: [
+          "brightness(1)",
+          "brightness(1.4) sepia(0.4) hue-rotate(60deg)",
+          "brightness(1)",
+        ],
+        transition: { duration: 0.5 },
+      });
+    }
+    prevHp.current = hp;
+  }, [hp, controls]);
+
   return (
-    <div
-      className={`flex items-center gap-4 p-4 rounded-xl bg-gray-800/60 border border-gray-700 ${
-        flip ? "flex-row-reverse" : ""
-      }`}
-    >
-      <div className="w-20 h-20 rounded-full bg-gray-700 flex items-center justify-center text-3xl shrink-0 border-2 border-gray-600">
-        {"\uD83D\uDC31"}
-      </div>
-      <div className="flex-1 min-w-0">
+    <motion.div animate={controls}>
+      <Card font="normal" className="bg-gray-800/60 border-gray-500 text-white">
         <div
-          className={`flex items-center gap-2 mb-1 ${flip ? "justify-end" : ""}`}
+          className={`flex items-center gap-4 p-4 ${
+            flip ? "flex-row-reverse" : ""
+          }`}
         >
-          <span className="font-semibold text-white truncate">{name}</span>
-          <span className={`text-xs font-medium ${classColors[classType]}`}>
-            {classType}
-          </span>
+          <div className="w-20 h-20 rounded-full bg-gray-700 flex items-center justify-center text-3xl shrink-0 border-2 border-gray-600">
+            {"\uD83D\uDC31"}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div
+              className={`flex items-center gap-2 mb-1 ${
+                flip ? "justify-end" : ""
+              }`}
+            >
+              <span className="font-semibold text-white truncate">{name}</span>
+              <span className={`text-xs font-medium ${classColors[classType]}`}>
+                {classType}
+              </span>
+            </div>
+            <div className="space-y-1.5">
+              <HealthBar current={hp} max={maxHp} />
+              <ManaBar current={mana} max={maxMana} />
+            </div>
+            <div className={`flex gap-2 mt-1 ${flip ? "justify-end" : ""}`}>
+              {isDefending && (
+                <span className="text-xs text-yellow-400 font-medium">
+                  {"\uD83D\uDEE1\uFE0F"} Defending
+                </span>
+              )}
+              {shield !== undefined && shield > 0 && (
+                <span className="text-xs text-cyan-400 font-medium">
+                  {"\uD83D\uDEE1\uFE0F"} Shield {shield}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
-        <div className="space-y-1.5">
-          <HealthBar current={hp} max={maxHp} />
-          <ManaBar current={mana} max={maxMana} />
-        </div>
-        <div className={`flex gap-2 mt-1 ${flip ? "justify-end" : ""}`}>
-          {isDefending && (
-            <span className="text-xs text-yellow-400 font-medium">
-              {"\uD83D\uDEE1\uFE0F"} Defending
-            </span>
-          )}
-          {shield !== undefined && shield > 0 && (
-            <span className="text-xs text-cyan-400 font-medium">
-              {"\uD83D\uDEE1\uFE0F"} Shield {shield}
-            </span>
-          )}
-        </div>
-      </div>
-    </div>
+      </Card>
+    </motion.div>
   );
 }
 
-export default CatCard;
+export default memo(CatCard);

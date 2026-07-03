@@ -1,4 +1,7 @@
 import { useId, useState } from "react";
+import { Button } from "@/components/ui/8bit/button";
+import { Textarea } from "@/components/ui/8bit/textarea";
+import { Card } from "@/components/ui/8bit/card";
 import type { Cat, Class } from "../types/game";
 
 interface MemorialCatCardProps {
@@ -50,7 +53,11 @@ function MemorialCatCard({ cat, onSaveNote }: MemorialCatCardProps) {
   }
 
   return (
-    <div className="flex flex-col gap-4 p-5 rounded-xl bg-gray-800/60 border border-gray-700 text-gray-200">
+    <Card
+      font="normal"
+      className="bg-gray-800/60 border-gray-500 text-gray-200"
+    >
+      <div className="flex flex-col gap-4 p-5">
       {/* Header: avatar + identity */}
       <div className="flex items-center gap-4">
         <div className="w-20 h-20 rounded-full bg-gray-700 flex items-center justify-center text-3xl shrink-0 border-2 border-gray-600 overflow-hidden">
@@ -161,14 +168,15 @@ function MemorialCatCard({ cat, onSaveNote }: MemorialCatCardProps) {
         <label htmlFor={noteId} className="text-sm font-semibold text-gray-300">
           Personal note
         </label>
-        <textarea
+        <Textarea
           id={noteId}
           value={note}
           onChange={(e) => setNote(e.target.value)}
           rows={3}
           disabled={saving}
           placeholder="Write a few words to remember them by."
-          className="resize-none rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+          font="normal"
+          className="resize-none bg-gray-900 text-sm text-white"
         />
         <div className="flex items-center justify-between">
           <span
@@ -176,15 +184,15 @@ function MemorialCatCard({ cat, onSaveNote }: MemorialCatCardProps) {
           >
             {note.length}/{NOTE_MAX_LENGTH}
           </span>
-          <button
+          <Button
             type="button"
             onClick={handleSave}
             disabled={!canSave}
             aria-label={`Save personal note for ${cat.name}`}
-            className="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="h-auto bg-indigo-600 px-4 py-1.5 text-[10px] text-white"
           >
             {saving ? "Saving..." : "Save"}
-          </button>
+          </Button>
         </div>
         {tooLong && (
           <span className="text-xs text-red-400">
@@ -192,7 +200,8 @@ function MemorialCatCard({ cat, onSaveNote }: MemorialCatCardProps) {
           </span>
         )}
       </div>
-    </div>
+      </div>
+    </Card>
   );
 }
 

@@ -302,32 +302,86 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     - _Requirements: 20.4, 26.3, 26.4_
 
 - [x] 9. UI polish and final integration
-  - [ ] 9.1 Verify initial ability cooldown behavior end-to-end
+  - [x] 9.1 Upgrade the frontend to Tailwind CSS v4
+    - Install `tailwindcss@4` + `@tailwindcss/vite` via npm (`npm install -D tailwindcss@4 @tailwindcss/vite`); wire the `@tailwindcss/vite` plugin into `frontend/vite.config.ts`
+    - Migrate the v3 `frontend/tailwind.config.js` content/theme (colors, fonts, extensions) to the Tailwind v4 CSS-first `@theme` block in the global stylesheet
+    - Update the global CSS (`frontend/src/index.css`) to `@import "tailwindcss";` and define the theme (dark base) via `@theme`
+    - Remove the now-unnecessary v3 PostCSS setup (`frontend/postcss.config.js`, `autoprefixer`) if no longer needed
+    - Verify `npm run build` and `npx vitest run` stay green (the vitest `test.env` block in `frontend/vite.config.ts` MUST be preserved)
+    - _Requirements: 27.1, 27.2_
+
+  - [x] 9.2 Initialize shadcn/ui + 8bitcn base
+    - Run the shadcn init for a Vite + Tailwind v4 project via `npx shadcn@latest init` (creates `components.json`, sets up the `@/*` path alias in `tsconfig`/vite `resolve.alias`, adds the `cn` util at `frontend/src/lib/utils.ts`, installs `class-variance-authority` + `tailwind-merge` + `clsx`, and the base theme CSS variables)
+    - Add the "Press Start 2P" pixel font (Google Fonts import or self-hosted) and apply it as the app's display font in the `@theme`
+    - Add the first 8bitcn component to validate the pipeline: `npx shadcn@latest add @8bitcn/button` (components land under `frontend/src/components/ui`)
+    - Verify `npm run build` + `npx vitest run` stay green
+    - _Requirements: 27.1, 27.2_
+
+  - [x] 9.3 Migrate existing components to 8bitcn retro variants
+    - Progressively restyle: the battle `ActionButtons` (use the 8bitcn Button), the auth/digitize/memorial inputs and textarea (8bitcn Input/Textarea), cards (8bitcn Card for CatCard/MemorialCatCard/BattleArena panels), and the HealthBar/ManaBar (8bitcn Progress or a retro bar)
+    - Purely presentational — do NOT change data flow, props contracts that tests rely on, or accessible roles/names (tests query by role/label/text and must stay green)
+    - Add any additional 8bitcn components needed (input, textarea, card, progress) via `npx shadcn@latest add @8bitcn/<component>`
+    - Verify `npm run build` + `npx vitest run` after each swap; keep the suite green
+    - _Requirements: 27.1, 27.2_
+
+  - [x] 9.4 Verify initial ability cooldown behavior end-to-end
     - Confirm `POST /api/battle/start` sets player special cooldowns to max (no first-turn ultimate)
     - Confirm new enemies mid-run also have special cooldown at max
     - Confirm regular ability cooldowns start at 0
     - _Requirements: 7.5, 8.9_
 
-  - [x] 9.2 Add missing UI features and polish
+  - [x] 9.5 Add missing UI features and polish
     - Loading states for all async operations
     - Animations for combat actions (framer-motion)
     - Revival notification UI (triggered by `revival` flag from API response)
     - Round completion celebration
     - Responsive design for mobile
 
-  - [x] 9.3 Implement performance optimizations
+  - [x] 9.6 Implement performance optimizations
     - React.memo for CatCard and HealthBar components
     - Lazy load MemorialPage
     - _Requirements: 27.1, 27.2_
 
-  - [x]* 9.4 Write E2E tests for complete game flow
+  - [x]* 9.7 Write E2E tests for complete game flow
     - Full flow: digitize (mock) → battle → die 9 times → memorial
     - Page refresh mid-battle (state restoration via `POST /api/battle/start`)
     - All ability types (DMG, HEAL, SHIELD)
     - Round progression across multiple rounds
     - Memorial display with multiple cats
 
-- [ ] 10. Checkpoint — Track A complete
+- [ ] 10. Home & Overworld pages
+  - [ ] 10.1 Backend: add `GET /api/game-runs/active`
+    - In `backend/routers/data.py`, add `GET /api/game-runs/active` (auth-required, reusing the existing auth dependency from task 3.5 → 401 if missing/invalid)
+    - Return the authenticated user's most recent `game_run` with `status = IN_PROGRESS` whose associated cat has `status = ALIVE`, ordered by `created_at` descending, as `ActiveGameRunResponse { run_id, cat }` (serialize the cat via the existing `CatResponse`); enforce ownership by `user_id` (RLS as defense-in-depth)
+    - Return `{ run_id: null, cat: null }` when the user has no such active run
+    - Add `ActiveGameRunResponse` to `models/schemas.py` with `run_id: Optional[str] = None` and `cat: Optional[CatResponse] = None`
+    - _Requirements: 24.6, 24.7_
+
+  - [ ]* 10.2 Write unit test for `GET /api/game-runs/active` (pytest, mock Supabase)
+    - Returns `{ run_id, cat }` when an IN_PROGRESS run whose cat is ALIVE exists
+    - Returns `{ run_id: null, cat: null }` when no active run exists
+    - Returns 401 when the Authorization header is missing or invalid
+    - _Requirements: 24.6, 24.7_
+
+  - [ ] 10.3 Frontend: routing change + HomePage
+    - Update `frontend/src/App.tsx`: make `/` render the new public `HomePage` (OUTSIDE `AuthGuard`, still inside the `ErrorBoundary`); move DigitizePage to a protected `/digitize` route; add a protected `/overworld` route. Keep `/login` public and BattlePage/MemorialPage protected
+    - Add `getActiveGameRun()` to `frontend/src/api/data.ts` (calls `GET /api/game-runs/active` with the auth token, returns `{ run_id, cat }`) plus a matching `ActiveGameRunResponse` type
+    - Create `frontend/src/pages/HomePage.tsx` (public): render the title "Nine Lives"; logged-out → tagline + "Sign In" (→ `/login`); logged-in → intro + "New Game" (→ `/digitize`), "Memorial" (→ `/memorial`), and "Continue" (→ `/battle/:runId`) shown when `getActiveGameRun()` returns a non-null run. Use `useAuth()` and the existing 8bitcn components / retro theme
+    - _Requirements: 25.1, 25.2, 32.1, 32.2, 32.3, 32.4, 32.5, 32.6_
+
+  - [ ] 10.4 Frontend: OverworldPage + post-victory routing + background assets
+    - Create `frontend/src/assets/backgrounds/` with a placeholder file (e.g. a `README.md` note) since real background images are added manually later; reference a background via CSS `url()` with a solid-color fallback so a missing image does not break the build
+    - Create `frontend/src/pages/OverworldPage.tsx` (protected): fullscreen background; nodes "Next Enemy" (→ `/battle/:runId`), "Memorial" (→ `/memorial`), and an optional disabled "Rest" placeholder. Resolve `run_id` via `getActiveGameRun()` on mount (refresh-safe). Style with 8bitcn components / retro theme
+    - Update `frontend/src/pages/BattlePage.tsx`: when the player wins a round (enemy defeated / `current_round` advanced within the action response — reuse the existing round-increment detection from the round-completion polish), show a dismissible victory popup; on dismiss, navigate to `/overworld`. Do NOT change battle/combat logic or the game-over → `/memorial` behavior
+    - _Requirements: 25.5, 33.1, 33.2, 33.3, 33.4, 33.5, 33.6, 33.7, 33.8_
+
+  - [ ]* 10.5 Write frontend tests for HomePage, OverworldPage, and BattlePage victory flow (Vitest)
+    - HomePage: public render (title + logged-out "Sign In"); logged-in "New Game"/"Memorial"/"Continue" navigation ("Continue" shown only when an active run exists)
+    - OverworldPage: resolves run id via `getActiveGameRun()`, "Next Enemy"/"Memorial" navigation, "Rest" rendered disabled
+    - BattlePage: victory popup shown on round win and dismiss navigates to `/overworld`; game-over still navigates to `/memorial`
+    - _Requirements: 32.1, 32.3, 32.4, 32.5, 33.2, 33.3, 33.4, 33.5, 33.6_
+
+- [ ] 11. Checkpoint — Track A complete
   - Run all pytest unit and property tests
   - Run all frontend (Vitest) tests
   - Test with multiple users to verify RLS and Battle API auth enforcement
@@ -339,56 +393,58 @@ This implementation plan covers the complete Nine Lives game. The work is split 
 ## Track B — Digitization Pipeline (pending ML research)
 ---
 
-- [ ] 11. Implement backend digitization pipeline services
-  - [ ] 11.1 Implement breed classifier service
+- [ ] 12. Implement backend digitization pipeline services
+  - [ ] 12.1 Implement breed classifier service
     - `services/classifier.py` — `classify_breed(image_bytes: bytes) -> str`
     - HuggingFace Inference API, retry with exponential backoff (3 attempts), fallback "Domestic Shorthair"
     - _Requirements: 2.1, 2.2, 2.3, 2.4_
 
-  - [ ]* 11.2 Write unit tests for breed classifier
+  - [ ]* 12.2 Write unit tests for breed classifier
     - Test success, retry logic with mocked failures, fallback, invalid image bytes
 
-  - [ ] 11.3 Implement color extractor service
+  - [ ] 12.3 Implement color extractor service
     - `services/color_extractor.py` — `extract_colors(image_bytes: bytes, n_colors: int = 3) -> list[str]`
     - OpenCV k-means clustering, hex output (#RRGGBB), retry up to 3 times
     - _Requirements: 3.1, 3.2, 3.3_
 
-  - [ ]* 11.4 Write property test for color extraction
+  - [ ]* 12.4 Write property test for color extraction
     - **Property 2: Hex Color Format** — all extracted colors match #[0-9A-Fa-f]{6}
 
-  - [ ] 11.5 Implement card generator service
+  - [ ] 12.5 Implement card generator service
     - `services/card_generator.py` — `generate_card(breed: str, colors: list[str], personality: Optional[str] = None) -> dict`
     - Claude Haiku API, validate stats in bounds, exactly 4 abilities (1 special), retry logic
     - When `personality` is provided, weave it into the Claude Haiku prompt so it influences the generated class, stats, abilities, and lore
     - _Requirements: 4.1–4.10, 4.11, 4.12, 31.1, 31.2_
 
-  - [ ]* 11.6 Write property tests for card generation
+  - [ ]* 12.6 Write property tests for card generation
     - **Property 3: Card Generation Schema Completeness**
     - **Property 4: Generated Stats Within Bounds**
 
-  - [ ] 11.7 Implement avatar generator service
+  - [ ] 12.7 Implement avatar generator service
     - `services/image_generator.py` — `generate_avatar(image_prompt: str) -> str`
+    - Wrap the per-cat `image_prompt` with the fixed positive/negative retro pixel-art style blocks from `docs/retro-avatar-prompt.md` (the single source of truth for avatar style) before calling the image model; keep the style block byte-for-byte identical across cats so every avatar is cohesive with the 8-bit UI. For prompt-only models (Gemini has no negative field) append the negatives as an "Avoid:" clause per the doc
     - Gemini 2.5 Flash, upload to Supabase storage, return public URL, 30s timeout
-    - _Requirements: 5.1, 5.2, 5.3_
+    - _Requirements: 5.1, 5.2, 5.3, 5.4_
 
-  - [ ]* 11.8 Write integration test for avatar generation
+  - [ ]* 12.8 Write integration test for avatar generation
     - prompt → API call → upload → valid public URL returned
 
-- [ ] 12. Wire real ML pipeline into `/api/digitize`
-  - [ ] 12.1 Replace random stat generation with real ML pipeline
+- [ ] 13. Wire real ML pipeline into `/api/digitize`
+  - [ ] 13.1 Replace random stat generation with real ML pipeline
     - Update `routers/digitize.py` to call classifier → color extractor → card generator → avatar generator in sequence
     - Replace the current random stat/ability generation with outputs from the ML services
     - Pass the `personality` from the digitize request through to `generate_card` so it influences the generated card
+    - The avatar step applies the canonical retro pixel-art style from `docs/retro-avatar-prompt.md` (wired in Task 12.7's `generate_avatar`)
     - Keep the same response shape (`CatResponse`) so the frontend requires no changes
     - _Requirements: 1.1–1.4, 2, 3, 4, 4.11, 5, 6_
 
-  - [ ]* 12.2 Write property test for image file validation
+  - [ ]* 13.2 Write property test for image file validation
     - **Property 1: Image File Validation**
 
-  - [ ]* 12.3 Write integration test for complete digitization pipeline
+  - [ ]* 13.3 Write integration test for complete digitization pipeline
     - Full flow: upload → classify → extract → generate → persist → verify DB records
 
-- [ ] 13. Final checkpoint — Track B complete
+- [ ] 14. Final checkpoint — Track B complete
   - All ML services working independently
   - `/api/digitize` orchestrates full pipeline correctly
   - Test with multiple real cat images
@@ -421,11 +477,19 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     { "id": 9, "tasks": ["4.9", "4.10", "5.2"] },
     { "id": 10, "tasks": ["4.11", "5.3", "5.4", "6.1"] },
     { "id": 11, "tasks": ["6.2", "7.1", "7.2", "8.1", "8.2"] },
-    { "id": 12, "tasks": ["6.3", "7.3", "9.1", "9.2", "9.3"] },
-    { "id": 13, "tasks": ["9.4", "10"] },
-    { "id": 14, "tasks": ["11.1", "11.3", "11.5", "11.7"] },
-    { "id": 15, "tasks": ["11.2", "11.4", "11.6", "11.8", "12.1"] },
-    { "id": 16, "tasks": ["12.2", "12.3", "13"] }
+    { "id": 12, "tasks": ["6.3", "7.3"] },
+    { "id": 13, "tasks": ["9.1"] },
+    { "id": 14, "tasks": ["9.2"] },
+    { "id": 15, "tasks": ["9.3"] },
+    { "id": 16, "tasks": ["9.4", "9.5", "9.6"] },
+    { "id": 17, "tasks": ["9.7", "10.1"] },
+    { "id": 18, "tasks": ["10.2", "10.3"] },
+    { "id": 19, "tasks": ["10.4"] },
+    { "id": 20, "tasks": ["10.5"] },
+    { "id": 21, "tasks": ["11"] },
+    { "id": 22, "tasks": ["12.1", "12.3", "12.5", "12.7"] },
+    { "id": 23, "tasks": ["12.2", "12.4", "12.6", "12.8", "13.1"] },
+    { "id": 24, "tasks": ["13.2", "13.3", "14"] }
   ]
 }
 ```

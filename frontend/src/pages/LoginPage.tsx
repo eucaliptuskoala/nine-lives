@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/8bit/button";
+import { Input } from "@/components/ui/8bit/input";
 import { supabase, useAuth } from "../hooks/useSupabase";
 
 type AuthMode = "signin" | "signup";
@@ -97,34 +99,34 @@ function LoginPage() {
     <div className="flex flex-col items-center justify-center min-h-screen gap-6 px-4">
       <div className="w-full max-w-sm flex flex-col gap-6">
         <div className="flex flex-col items-center gap-2 text-center">
-          <h1 className="text-3xl font-bold">Nine Lives</h1>
+          <h1 className="retro text-2xl font-bold">Nine Lives</h1>
           <p className="text-gray-500">
             {isSignup ? "Create an account to get started." : "Sign in to continue."}
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <label className="flex flex-col gap-1 text-sm font-medium">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+          <label className="flex flex-col gap-2 text-sm font-medium">
             Email
-            <input
+            <Input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
               autoComplete="email"
-              className="rounded-md border border-gray-300 px-3 py-2 text-base focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              font="normal"
             />
           </label>
 
-          <label className="flex flex-col gap-1 text-sm font-medium">
+          <label className="flex flex-col gap-2 text-sm font-medium">
             Password
-            <input
+            <Input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
               autoComplete={isSignup ? "new-password" : "current-password"}
-              className="rounded-md border border-gray-300 px-3 py-2 text-base focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              font="normal"
             />
           </label>
 
@@ -139,10 +141,10 @@ function LoginPage() {
             </p>
           )}
 
-          <button
+          <Button
             type="submit"
             disabled={submitting}
-            className="rounded-md bg-indigo-600 px-4 py-2 font-medium text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="mt-2 h-auto bg-indigo-600 px-4 py-2 text-[10px] text-white"
           >
             {submitting
               ? isSignup
@@ -151,18 +153,19 @@ function LoginPage() {
               : isSignup
                 ? "Sign up"
                 : "Sign in"}
-          </button>
+          </Button>
         </form>
 
         <p className="text-center text-sm text-gray-500">
           {isSignup ? "Already have an account?" : "Don't have an account?"}{" "}
-          <button
+          <Button
             type="button"
+            variant="link"
             onClick={toggleMode}
-            className="font-medium text-indigo-600 hover:text-indigo-700 hover:underline"
+            className="h-auto p-0 align-baseline font-medium text-indigo-600 hover:text-indigo-700 hover:underline"
           >
             {isSignup ? "Sign in" : "Sign up"}
-          </button>
+          </Button>
         </p>
       </div>
     </div>

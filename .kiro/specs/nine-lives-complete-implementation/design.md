@@ -8,7 +8,9 @@ Nine Lives is a cat digitization roguelike game where users upload cat photos th
 
 **Current State:** Design docs complete, frontend battle loop partially working with mock data, backend skeleton exists with empty service files.
 
-**Tech Stack:** React + Vite + TypeScript + Tailwind CSS + framer-motion (frontend), Python FastAPI (backend), Supabase (database + auth), HuggingFace API (breed classification), OpenCV (color extraction), Claude Haiku API (card generation), Gemini 2.5 Flash (avatar generation).
+**Tech Stack:** React + Vite + TypeScript + Tailwind CSS v4 + shadcn/ui + 8bitcn (retro 8-bit component registry) + "Press Start 2P" pixel font + framer-motion (frontend), Python FastAPI (backend), Supabase (database + auth), HuggingFace API (breed classification), OpenCV (color extraction), Claude Haiku API (card generation), Gemini 2.5 Flash (avatar generation).
+
+**Visual direction:** The frontend adopts a retro 8-bit aesthetic. UI components use shadcn/ui conventions sourced from the [8bitcn](https://8bitcn.com) registry, and generated cat avatars follow a matching retro pixel-art style (see the UI / Design System subsection and `docs/retro-avatar-prompt.md`). This is a presentational direction only — combat, battle, data, auth, and memorial functional design are unchanged.
 
 ## Architecture
 
@@ -16,15 +18,18 @@ Nine Lives is a cat digitization roguelike game where users upload cat photos th
 graph TB
     subgraph "Frontend - React + Vite"
         UI[User Interface]
-        DigitizePage[Digitize Page]
-        BattlePage[Battle Page]
-        MemorialPage[Memorial Page]
+        HomePage[Home Page - public /]
+        DigitizePage[Digitize Page - /digitize]
+        BattlePage[Battle Page - /battle/:runId]
+        MemorialPage[Memorial Page - /memorial]
+        OverworldPage[Overworld Page - /overworld]
     end
 
     subgraph "Backend - FastAPI"
         API[API Router]
         DigitizeEndpoint[POST /api/digitize]
         GameRunsEndpoint[POST /api/game-runs]
+        ActiveRunEndpoint[GET /api/game-runs/active]
         MemorialEndpoint[GET /api/cats/memorial]
         NoteEndpoint[PATCH /api/cats/:id/note]
         BattleStart[POST /api/battle/start]
@@ -50,10 +55,14 @@ graph TB
         RLS[Row Level Security]
     end
 
+    UI --> HomePage
     UI --> DigitizePage
     UI --> BattlePage
     UI --> MemorialPage
+    UI --> OverworldPage
 
+    HomePage --> ActiveRunEndpoint
+    OverworldPage --> ActiveRunEndpoint
     DigitizePage --> DigitizeEndpoint
     DigitizePage --> GameRunsEndpoint
     BattlePage --> BattleStart
@@ -62,6 +71,7 @@ graph TB
     MemorialPage --> NoteEndpoint
 
     GameRunsEndpoint --> DB
+    ActiveRunEndpoint --> DB
     MemorialEndpoint --> DB
     NoteEndpoint --> DB
 
@@ -84,9 +94,11 @@ graph TB
     CardGenerator --> Claude
     ImageGenerator --> Gemini
 
+    HomePage --> Auth
     DigitizePage --> Auth
     BattlePage --> Auth
     MemorialPage --> Auth
+    OverworldPage --> Auth
     DB --> RLS
 ```
 
@@ -101,6 +113,7 @@ sequenceDiagram
     participant BP as BattlePage
     participant BS as Battle_System
     participant M as Memorial
+    participant O as OverworldPage
 
     U->>D: Upload cat photo
     D->>B: POST /api/game-runs (create run, DIGITIZING)
@@ -152,18 +165,79 @@ sequenceDiagram
         B-->>BP: BattleActionResponse {game_state, game_over, revival, events}
         BP->>BP: Render new state from response
         alt game_over = true
-            BP->>M: Navigate to Memorial
+            BP->>M: Navigate to Memorial (lives exhausted)
+        else round won (enemy defeated; next enemy already generated in same response)
+            BP->>BP: Show dismissible victory popup
+            BP->>O: On dismiss, navigate to /overworld
+            O->>B: GET /api/game-runs/active (resolve current run_id, refresh-safe)
+            O->>BP: "Next Enemy" navigates to /battle/:runId (idempotent start resumes advanced round)
         end
     end
 ```
+
+**Note (victory → overworld hop):** This is a frontend navigation change only — the battle sequence and combat resolution above are unchanged. When a `POST /api/battle/action` response indicates the enemy was defeated (and the backend has already advanced `current_round` and generated the next enemy), BattlePage shows a dismissible victory popup and, on dismiss, routes to `/overworld`. From the Overworld, "Next Enemy" returns to `/battle/:runId`, where the idempotent `POST /api/battle/start` resumes the already-advanced round. Game-over (lives exhausted) still routes to `/memorial` exactly as today.
 
 ## Components and Interfaces
 
 ### Frontend Components
 
+#### Routing & Auth Model
+
+The app uses `react-router-dom` with two **public** routes; every other route is **protected** by `AuthGuard` (which reads `useAuth()` from the Supabase auth context and, when there is no session, redirects to `/login`, preserving the originally requested path in `location.state.from`).
+
+| Route | Page | Access |
+|---|---|---|
+| `/` | HomePage | **Public** |
+| `/login` | LoginPage | **Public** |
+| `/digitize` | DigitizePage | Protected (AuthGuard) |
+| `/battle/:runId` | BattlePage | Protected (AuthGuard) |
+| `/memorial` | MemorialPage | Protected (AuthGuard) |
+| `/overworld` | OverworldPage | Protected (AuthGuard) |
+
+- `/` (Home) and `/login` render **outside** `AuthGuard`. HomePage adapts its content to the auth state via `useAuth()` (logged-out vs logged-in) and never forces a redirect.
+- `/digitize`, `/battle/:runId`, `/memorial`, and `/overworld` are wrapped in `AuthGuard`; an unauthenticated visit redirects to `/login`.
+- **Change from the previous model:** previously `/` rendered DigitizePage behind `AuthGuard`. Now the public landing (HomePage) lives at `/`, and DigitizePage moves to the protected `/digitize` route. Login stays public; Digitize, Battle, Memorial, and the new Overworld are protected.
+
+#### UI / Design System (8bitcn + Tailwind v4)
+
+The frontend uses **shadcn/ui** conventions with the **8bitcn** registry to deliver a retro 8-bit aesthetic (chunky pixel styling, hard edges, and the "Press Start 2P" pixel display font).
+
+- **Registry, not a runtime dependency**: Components are added via the shadcn CLI, which copies component source into the repo under a `components/ui` folder. They are owned and versioned in-tree rather than installed as a runtime package. Each 8bitcn component builds on Radix UI primitives + `class-variance-authority` (variant styling) + `tailwind-merge`/`clsx` (the `cn` class-merging util).
+- **Progressive restyle of existing components**: Existing hand-rolled components — Button-like ActionButtons, inputs/textarea, cards, and the HealthBar/ManaBar progress bars — are progressively restyled with the 8bitcn variants. This is **purely presentational**: layout and behavior are unchanged, and there is no change to data flow or the backend-authoritative architecture (the frontend remains a rendering/input layer with an auth-only Supabase client).
+- **Tailwind CSS v4**: Styling uses Tailwind v4 with the CSS-first `@theme` configuration via `@tailwindcss/vite`, replacing the prior v3 `tailwind.config.js` + PostCSS (`postcss` + `autoprefixer`) setup.
+- **Avatar cohesion**: Generated cat avatars are produced in a matching retro pixel-art style (see Image Generator Service #12 and `docs/retro-avatar-prompt.md`) so the digitized cats sit cohesively inside the 8-bit UI.
+
+#### 0. HomePage (Landing)
+
+**Purpose**: Public landing page at route `/`. Acts as the entry point into a game and adapts its content to the auth state via `useAuth()`.
+
+**Access**: **Public** — rendered outside `AuthGuard`. It never redirects; both logged-out and logged-in users see it.
+
+**Interface**:
+
+```typescript
+interface HomePageState {
+  activeRun: ActiveGameRunResponse | null;  // { run_id, cat } from GET /api/game-runs/active
+  loading: boolean;                          // true while the active-run lookup is in flight
+  error: string | null;
+}
+```
+
+**Responsibilities**:
+
+- Render the game title "Nine Lives" and a retro-styled layout using the existing 8bitcn components / theme (no new UI libraries).
+- **Logged out** (`useAuth().user == null`): show a short tagline and a "Sign In" button that navigates to `/login`.
+- **Logged in**: show a short intro paragraph (placeholder copy) plus action buttons:
+  - "New Game" → navigates to `/digitize`.
+  - "Continue" → navigates to `/battle/:runId` — shown when the user has an active run (an `IN_PROGRESS` run whose cat is `ALIVE`). May be shown alongside or in place of "New Game".
+  - "Memorial" → navigates to `/memorial`.
+- Decide New Game vs Continue by calling `GET /api/game-runs/active` — via a small `getActiveGameRun()` client in `api/data.ts` (or a thin `useActiveRun` hook). A non-null `run_id` means an active run exists, so "Continue" is offered and can deep-link to `/battle/:run_id`.
+
+**Note**: HomePage uses the Supabase client only for reading auth state (`useAuth()`); the active-run lookup goes through the authenticated backend endpoint, consistent with the backend-authoritative data model.
+
 #### 1. DigitizePage
 
-**Purpose**: Handles cat photo upload and digitization flow
+**Purpose**: Handles cat photo upload and digitization flow. Lives at the **protected** route `/digitize` (previously `/`), behind `AuthGuard`.
 
 **Interface**:
 
@@ -190,9 +264,11 @@ interface DigitizePageState {
 - Create game_run with status DIGITIZING by calling the backend `POST /api/game-runs` endpoint (with auth token) — **not** via a direct Supabase insert
 - Call backend `/api/digitize` endpoint, passing the photo, the cat **name**, and the optional **personality** description
 - Display processing status to user
-- Navigate to BattlePage on completion
+- On successful digitize, navigate to `/battle/:runId` (BattlePage) — unchanged
 
 **Note**: DigitizePage uses the Supabase client only to obtain the auth token/session. All database writes (game_run creation) go through authenticated backend endpoints.
+
+**Note (routing)**: DigitizePage now renders at the protected `/digitize` route rather than `/`. The public landing at `/` is HomePage (#0), which links here via "New Game". The digitize → `/battle/:runId` navigation on completion is unchanged.
 
 #### 2. BattlePage
 
@@ -206,10 +282,41 @@ interface DigitizePageState {
 - Render `gameState` returned from the Battle API
 - Display `events` list as a turn log
 - Show revival notification when `revival` flag is true
-- Navigate to MemorialPage when `game_over` flag is true
+- On a **round win** — detected from the `POST /api/battle/action` response when the enemy is defeated and `current_round` has advanced within that same response (no combat-logic change; the backend already advanced the round and generated the next enemy) — show a **dismissible victory popup**; on dismiss, navigate to `/overworld`
+- Navigate to MemorialPage when `game_over` flag is true (lives exhausted) — unchanged
 - Display loading/error states
 
 **Note**: BattlePage performs no combat calculations. It is a pure rendering layer that presents whatever state the Battle API returns.
+
+**Note (victory → overworld flow, frontend only)**: There is **no** change to battle/combat logic. The backend already advances `current_round` and generates the next enemy inside the same `POST /api/battle/action` response on a win. BattlePage simply reacts to that: it shows a dismissible victory popup and, on dismiss, routes to `/overworld`. From the Overworld, "Next Enemy" returns to `/battle/:runId`, where the idempotent `POST /api/battle/start` resumes the already-advanced round. Game-over (lives exhausted) still routes to `/memorial` as today.
+
+#### 2b. OverworldPage
+
+**Purpose**: Post-victory hub at route `/overworld`. After winning a round the player lands here to choose where to go next.
+
+**Access**: Protected by `AuthGuard`.
+
+**Interface**:
+
+```typescript
+interface OverworldPageState {
+  runId: string | null;  // resolved from GET /api/game-runs/active (refresh-safe)
+  loading: boolean;
+  error: string | null;
+}
+```
+
+**Responsibilities**:
+
+- Render a fullscreen background image sourced from a new `frontend/src/assets/backgrounds/` folder, referenced via a CSS `url()` with a **solid-color fallback** so a not-yet-present image does not break the build (e.g. `background: #1a1a2e url("/src/assets/backgrounds/overworld.png") center / cover no-repeat;`).
+- On mount, resolve the current `run_id` via `GET /api/game-runs/active` so the hub is **refresh-safe** (it works after a reload with no route param).
+- Present 2–3 clickable location nodes styled as 8bit buttons/icons:
+  - "Next Enemy" → navigates to `/battle/:runId`, resuming the current run. The backend has already advanced `current_round` and generated the next enemy, and `POST /api/battle/start` is idempotent, so this simply resumes the already-advanced round.
+  - "Memorial" → navigates to `/memorial`.
+  - "Rest" (optional) → **disabled placeholder** node for a future feature.
+- Styled with the existing 8bitcn components / retro theme (no new UI libraries).
+
+**Note**: OverworldPage performs no combat math and no direct database access; it reads the active run through the authenticated backend endpoint, consistent with the backend-authoritative data model.
 
 #### 3. MemorialPage
 
@@ -360,6 +467,9 @@ async def submit_action(body: BattleActionRequest, user: AuthUser) -> BattleActi
 @router.post("/api/game-runs")
 async def create_game_run(user: AuthUser) -> CreateGameRunResponse
 
+@router.get("/api/game-runs/active")
+async def get_active_game_run(user: AuthUser) -> ActiveGameRunResponse
+
 @router.get("/api/cats/memorial")
 async def list_memorial_cats(user: AuthUser) -> list[Cat]
 
@@ -374,6 +484,10 @@ class CreateGameRunResponse(BaseModel):
     run_id: str
     status: GameStatus  # always DIGITIZING on creation
 
+class ActiveGameRunResponse(BaseModel):
+    run_id: str | None = None       # the active run's id, or None when the user has no active run
+    cat: CatResponse | None = None  # the ALIVE cat for that run (reuses CatResponse), or None when none exists
+
 class UpdateNoteRequest(BaseModel):
     note: str  # max 500 chars; validated server-side
 ```
@@ -384,6 +498,15 @@ class UpdateNoteRequest(BaseModel):
 2. Insert a new `game_run` row for the authenticated user with `status = DIGITIZING`, `cat_id = null`, `current_round = 0`, `state = null`
 3. Return the new `run_id` and status
 4. _Requirements: 1.3, 24.3_
+
+**`GET /api/game-runs/active`** — New Track-A endpoint used by HomePage (New Game vs Continue) and OverworldPage (resolve the current run id for "Next Enemy", refresh-safe).
+
+1. Verify auth token → 401 if missing/invalid
+2. Query the authenticated user's most recent `game_run` WHERE `user_id = authenticated user` AND `status = IN_PROGRESS` whose associated cat has `status = ALIVE`, ordered by `created_at` descending
+3. If found, return `{ run_id, cat }` with the cat serialized as `CatResponse`
+4. If none exists, return `{ run_id: null, cat: null }`
+5. Ownership is enforced by `user_id` in the API layer, consistent with the other data endpoints (RLS as defense-in-depth)
+6. _Requirements: 24.1_
 
 **`GET /api/cats/memorial`** — Replaces the frontend's former direct `cat` table query in `useMemorial.ts`.
 
@@ -567,6 +690,8 @@ async def generate_card(breed: str, colors: list[str], personality: Optional[str
 }
 ```
 
+**Note (retro avatar style)**: The per-cat `image_prompt` produced here carries only the cat-specific subject details (breed, colors, class, personality). It does **not** embed the visual art style — the canonical retro pixel-art style is defined once in `docs/retro-avatar-prompt.md` and applied downstream by the Avatar Generator (#12), keeping every cat visually cohesive with the 8-bit UI.
+
 #### 12. Image Generator Service (`services/image_generator.py`)
 
 **Purpose**: Generate cat avatar using AI image generation
@@ -579,10 +704,13 @@ async def generate_avatar(image_prompt: str) -> str
 
 **Responsibilities**:
 
-- Call Gemini 2.5 Flash Image API
+- Wrap the per-cat `image_prompt` with the fixed positive/negative retro pixel-art **style blocks** from `docs/retro-avatar-prompt.md` before calling the image model. The style block is kept byte-for-byte identical across cats — only the per-cat subject changes — so every avatar matches the retro 8-bit (8bitcn) UI.
+- Call Gemini 2.5 Flash Image API (for prompt-only models with no negative field, append the negatives as an "Avoid:" clause per the doc)
 - Generate stylized cat avatar from text prompt
 - Upload image to Supabase storage
 - Return public URL
+
+**Note**: `docs/retro-avatar-prompt.md` is the single source of truth for avatar *style*; this service is where the wrapper is applied once the ML pipeline is implemented.
 
 
 ## Data Models
@@ -934,7 +1062,9 @@ def test_game_state_round_trip(state):
 ### Frontend Tests (Vitest)
 
 - `useGameState`: verifies `startBattle` calls `POST /api/battle/start`, `submitAction` calls `POST /api/battle/action`, `gameState` is set from response (not computed locally), `isLoading`/`error`/`revival`/`game_over` flags are set correctly
-- `BattlePage`: verifies action buttons call correct `submitAction` arguments, buttons disabled during loading, revival notification renders when flag is true, navigation to memorial when game_over is true
+- `BattlePage`: verifies action buttons call correct `submitAction` arguments, buttons disabled during loading, revival notification renders when flag is true, navigation to memorial when game_over is true, and — on a round win — a dismissible victory popup renders and dismissing it navigates to `/overworld`
+- `HomePage`: verifies public rendering without a session (title + tagline + "Sign In" → `/login`); when authenticated, "New Game" → `/digitize` and "Memorial" → `/memorial`; and that a non-null `GET /api/game-runs/active` result surfaces "Continue" → `/battle/:runId`
+- `OverworldPage`: verifies it resolves the run id via `GET /api/game-runs/active` (refresh-safe), "Next Enemy" navigates to `/battle/:runId`, "Memorial" navigates to `/memorial`, and the optional "Rest" node renders disabled
 
 ### Integration Tests (pytest + TestClient, Playwright E2E)
 
@@ -963,7 +1093,7 @@ def test_game_state_round_trip(state):
 - **Ownership Enforcement in API Layer**: Every data and battle endpoint verifies the Supabase JWT and confirms the authenticated user owns the target resource (game_run / cat) before reading or writing.
 - **RLS Policies (defense-in-depth)**: The backend performs all queries with the Supabase service key (which bypasses RLS), so primary authorization is enforced in the API layer. RLS policies (user_id filtering on cat and game_run rows) remain enabled as a defense-in-depth backstop in case of misconfiguration or direct database access.
 - **Battle API Auth**: Every `/api/battle/*` request requires Supabase JWT in `Authorization` header. Backend verifies token and confirms game_run ownership before any action. supabase-py handles JWT verification.
-- **Data API Auth**: `POST /api/game-runs`, `GET /api/cats/memorial`, and `PATCH /api/cats/{cat_id}/note` all require a Supabase JWT and verify ownership, consistent with the Battle API.
+- **Data API Auth**: `POST /api/game-runs`, `GET /api/game-runs/active`, `GET /api/cats/memorial`, and `PATCH /api/cats/{cat_id}/note` all require a Supabase JWT and verify ownership, consistent with the Battle API.
 - **Digitize Endpoint**: `/api/digitize` remains a mock endpoint and is unchanged by this decision.
 - **State Authority**: Frontend cannot write `game_run.state` directly — all mutations go through the authenticated Battle API
 - **Input Validation**: Sanitize personal notes to prevent XSS; enforce the ≤500 char limit server-side in `PATCH /api/cats/{cat_id}/note`
@@ -974,7 +1104,12 @@ def test_game_state_round_trip(state):
 
 ### Frontend
 
-- React 18+, Vite 5+, TypeScript 5+, Tailwind CSS 3+
+- React 19 + Vite + TypeScript (already in place)
+- Tailwind CSS v4 (`tailwindcss@4`, `@tailwindcss/vite`) — CSS-first `@theme` config; replaces the prior v3 `tailwind.config.js` + PostCSS (`postcss` + `autoprefixer`) setup
+- `shadcn` CLI (dev/one-off — used to add 8bitcn components into `components/ui`; not a runtime dependency)
+- Radix UI primitives (per 8bitcn component that needs them)
+- `class-variance-authority` (component variants), `tailwind-merge` + `clsx` (the `cn` class-merging util)
+- "Press Start 2P" pixel display font
 - framer-motion (animations)
 - @supabase/supabase-js (auth only — login, session management, and JWT retrieval; no direct DB reads or writes)
 

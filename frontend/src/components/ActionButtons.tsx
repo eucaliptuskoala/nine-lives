@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+import { Button } from "@/components/ui/8bit/button";
 import type { Ability } from "../types/game";
 import { AbilityType } from "../types/game";
 
@@ -12,12 +12,14 @@ interface ActionButtonsProps {
   disabled: boolean;
 }
 
+// Retro accent colours per ability type. These override the 8bit Button's
+// default `bg-foreground` fill while keeping its pixelated frame.
 const abilityColors: Record<string, string> = {
-  [AbilityType.DMG]: "from-red-600 to-red-800 border-red-500",
-  [AbilityType.HEAL]: "from-green-600 to-green-800 border-green-500",
-  [AbilityType.SHIELD]: "from-cyan-600 to-cyan-800 border-cyan-500",
-  [AbilityType.TRUE_DMG]: "from-purple-600 to-purple-800 border-purple-500",
-  [AbilityType.AOE]: "from-orange-600 to-orange-800 border-orange-500",
+  [AbilityType.DMG]: "bg-red-700 text-white",
+  [AbilityType.HEAL]: "bg-green-700 text-white",
+  [AbilityType.SHIELD]: "bg-cyan-700 text-white",
+  [AbilityType.TRUE_DMG]: "bg-purple-700 text-white",
+  [AbilityType.AOE]: "bg-orange-700 text-white",
 };
 
 function ActionButtons({
@@ -30,26 +32,24 @@ function ActionButtons({
   disabled,
 }: ActionButtonsProps) {
   return (
-    <div className="grid grid-cols-3 gap-2">
-      <motion.button
-        whileHover={disabled ? {} : { scale: 1.03 }}
-        whileTap={disabled ? {} : { scale: 0.97 }}
+    <div className="grid grid-cols-3 gap-3">
+      <Button
+        type="button"
         onClick={onAttack}
         disabled={disabled}
-        className="col-span-1 px-4 py-3 rounded-lg font-semibold text-sm bg-gray-700 hover:bg-gray-600 text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        className="col-span-1 h-auto min-h-12 px-4 py-3 text-xs bg-gray-700 text-white"
       >
         {"\u2694\uFE0F"} Attack
-      </motion.button>
+      </Button>
 
-      <motion.button
-        whileHover={disabled ? {} : { scale: 1.03 }}
-        whileTap={disabled ? {} : { scale: 0.97 }}
+      <Button
+        type="button"
         onClick={onDefend}
         disabled={disabled}
-        className="col-span-1 px-4 py-3 rounded-lg font-semibold text-sm bg-gray-700 hover:bg-gray-600 text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        className="col-span-1 h-auto min-h-12 px-4 py-3 text-xs bg-gray-700 text-white"
       >
         {"\uD83D\uDEE1\uFE0F"} Defend
-      </motion.button>
+      </Button>
 
       {abilities.map((ability) => {
         const cd = cooldowns[ability.id] ?? 0;
@@ -57,26 +57,28 @@ function ActionButtons({
         const canUse = cd === 0 && canAfford && !disabled;
 
         return (
-          <motion.button
+          <Button
             key={ability.id}
-            whileHover={canUse ? { scale: 1.03 } : {}}
-            whileTap={canUse ? { scale: 0.97 } : {}}
+            type="button"
             onClick={() => onUseAbility(ability.id)}
             disabled={!canUse}
-            className={`col-span-1 px-3 py-3 rounded-lg font-semibold text-xs text-white transition-all bg-gradient-to-b ${
+            className={`col-span-1 h-auto min-h-12 flex-col px-3 py-3 text-[10px] leading-tight ${
               ability.is_special
-                ? "from-yellow-600 to-yellow-800 border border-yellow-500"
-                : abilityColors[ability.type] ?? "from-gray-600 to-gray-800 border border-gray-500"
-            } disabled:opacity-40 disabled:cursor-not-allowed relative`}
+                ? "bg-yellow-600 text-white"
+                : abilityColors[ability.type] ?? "bg-gray-700 text-white"
+            }`}
           >
-            <span className="block leading-tight">{ability.is_special ? "\u2B50" : ""}{ability.name}</span>
-            <span className="block text-[10px] opacity-75 mt-0.5">
+            <span className="block leading-tight">
+              {ability.is_special ? "\u2B50" : ""}
+              {ability.name}
+            </span>
+            <span className="block text-[9px] opacity-75 mt-0.5">
               {ability.mana_cost} MP
               {cd > 0 ? ` \u2022 ${cd}t` : ""}
             </span>
-          </motion.button>
-        )},
-      )}
+          </Button>
+        );
+      })}
     </div>
   );
 }

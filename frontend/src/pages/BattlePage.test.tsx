@@ -182,4 +182,37 @@ describe("BattlePage", () => {
     expect(screen.getByRole("button", { name: /attack/i })).toBeEnabled();
     expect(screen.getByRole("button", { name: /defend/i })).toBeEnabled();
   });
+
+  it("shows a dismissible victory popup on round win and routes to /overworld on dismiss", () => {
+    // Start on round 1 — no popup on first render.
+    useGameStateMock.mockReturnValue(
+      hookReturn({ gameState: { ...baseGameState, current_round: 1 } }),
+    );
+    const { rerender } = render(
+      <MemoryRouter initialEntries={["/battle/run-123"]}>
+        <Routes>
+          <Route path="/battle/:runId" element={<BattlePage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    // Backend advances the round (enemy defeated) → popup appears.
+    useGameStateMock.mockReturnValue(
+      hookReturn({ gameState: { ...baseGameState, current_round: 2 } }),
+    );
+    rerender(
+      <MemoryRouter initialEntries={["/battle/run-123"]}>
+        <Routes>
+          <Route path="/battle/:runId" element={<BattlePage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveTextContent(/enemy defeated/i);
+
+    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+    expect(navigateMock).toHaveBeenCalledWith("/overworld");
+  });
 });

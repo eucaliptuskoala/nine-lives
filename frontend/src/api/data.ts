@@ -16,10 +16,30 @@ export interface CreateGameRunResponse {
   status: GameStatus; // always DIGITIZING on creation
 }
 
+/**
+ * Response from `GET /api/game-runs/active`. Both fields are null when the
+ * authenticated user has no active (IN_PROGRESS + ALIVE cat) run.
+ */
+export interface ActiveGameRunResponse {
+  run_id: string | null;
+  cat: Cat | null;
+}
+
 /** Creates a new game run for the authenticated user. Requires auth. */
 export function createGameRun(): Promise<CreateGameRunResponse> {
   return authFetch<CreateGameRunResponse>("/api/game-runs", {
     method: "POST",
+  });
+}
+
+/**
+ * Fetches the authenticated user's active game run (most recent IN_PROGRESS run
+ * whose cat is ALIVE), or `{ run_id: null, cat: null }` when none exists.
+ * Requires auth.
+ */
+export function getActiveGameRun(): Promise<ActiveGameRunResponse> {
+  return authFetch<ActiveGameRunResponse>("/api/game-runs/active", {
+    method: "GET",
   });
 }
 

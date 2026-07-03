@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import type { NavigateFunction } from "react-router-dom";
+import { Button } from "@/components/ui/8bit/button";
 import { supabase } from "../hooks/useSupabase";
 
 /**
@@ -34,13 +35,13 @@ function AppHeader() {
 
   return (
     <header className="fixed top-0 right-0 z-50 p-3">
-      <button
+      <Button
         type="button"
         onClick={handleSignOut}
-        className="rounded-md bg-gray-800/80 px-3 py-1.5 text-sm font-medium text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-400"
+        className="h-auto bg-gray-800 px-3 py-1.5 text-[10px] text-white"
       >
         Sign out
-      </button>
+      </Button>
     </header>
   );
 }

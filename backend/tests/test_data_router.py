@@ -155,6 +155,22 @@ def make_cat_row(**over):
     return row
 
 
+def make_game_run_row(**over):
+    """A realistic `game_run` table row."""
+    row = {
+        "id": "run-1",
+        "user_id": USER_ID,
+        "cat_id": CAT_ID,
+        "status": "IN_PROGRESS",
+        "current_round": 2,
+        "state": None,
+        "created_at": "2024-02-01T00:00:00Z",
+        "completed_at": None,
+    }
+    row.update(over)
+    return row
+
+
 def make_ability_rows(creature_id=CAT_ID):
     return [
         {
@@ -221,6 +237,13 @@ def test_memorial_missing_auth_returns_401(client, monkeypatch):
     """GET /api/cats/memorial with no Authorization header -> 401."""
     install_fake_supabase(monkeypatch, {"cat": []})
     resp = client.get("/api/cats/memorial")
+    assert resp.status_code == 401
+
+
+def test_active_game_run_missing_auth_returns_401(client, monkeypatch):
+    """GET /api/game-runs/active with no Authorization header -> 401."""
+    install_fake_supabase(monkeypatch, {"game_run": [], "cat": []})
+    resp = client.get("/api/game-runs/active")
     assert resp.status_code == 401
 
 
@@ -397,3 +420,108 @@ def test_create_game_run_inserts_digitizing_run_for_user(client, monkeypatch):
     # The response run_id matches the id of the inserted row.
     inserted_row = fake.tables["game_run"][0]
     assert body["run_id"] == str(inserted_row["id"])
+
+
+# ─── GET /api/game-runs/active — Req 24.6, 24.7 ───────────────────────────────
+
+
+def test_active_game_run_returns_run_and_alive_cat(client, monkeypatch):
+    """An IN_PROGRESS run whose cat is ALIVE -> {run_id, cat} with abilities."""
+    override_auth(user_id=USER_ID)
+    alive_cat = make_cat_row(status="ALIVE", current_hp=80, lives_remaining=5)
+    tables = {
+        "game_run": [make_game_run_row(id="run-active", cat_id=CAT_ID)],
+        "cat": [alive_cat],
+        "ability": make_ability_rows(CAT_ID),
+    }
+    install_fake_supabase(monkeypatch, tables)
+
+    resp = client.get("/api/game-runs/active")
+    assert resp.status_code == 200
+
+    body = resp.json()
+    assert body["run_id"] == "run-active"
+    assert body["cat"]["id"] == CAT_ID
+    assert body["cat"]["status"] == "ALIVE"
+    assert {a["name"] for a in body["cat"]["abilities"]} == {"Claw", "Nine Fury"}
+
+
+def test_active_game_run_picks_most_recent_in_progress(client, monkeypatch):
+    """When multiple IN_PROGRESS runs exist, the newest (by created_at) wins."""
+    override_auth(user_id=USER_ID)
+    old_cat = make_cat_row(id="cat-old", status="ALIVE")
+    new_cat = make_cat_row(id="cat-new", status="ALIVE")
+    tables = {
+        "game_run": [
+            make_game_run_row(
+                id="run-old",
+                cat_id="cat-old",
+                created_at="2024-01-01T00:00:00Z",
+            ),
+            make_game_run_row(
+                id="run-new",
+                cat_id="cat-new",
+                created_at="2024-06-01T00:00:00Z",
+            ),
+        ],
+        "cat": [old_cat, new_cat],
+        "ability": make_ability_rows("cat-old") + make_ability_rows("cat-new"),
+    }
+    install_fake_supabase(monkeypatch, tables)
+
+    resp = client.get("/api/game-runs/active")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["run_id"] == "run-new"
+    assert body["cat"]["id"] == "cat-new"
+
+
+def test_active_game_run_none_when_only_completed_runs(client, monkeypatch):
+    """Only COMPLETED runs -> {run_id: null, cat: null}."""
+    override_auth(user_id=USER_ID)
+    tables = {
+        "game_run": [make_game_run_row(id="run-done", status="COMPLETED")],
+        "cat": [make_cat_row(status="ALIVE")],
+        "ability": make_ability_rows(),
+    }
+    install_fake_supabase(monkeypatch, tables)
+
+    resp = client.get("/api/game-runs/active")
+    assert resp.status_code == 200
+    assert resp.json() == {"run_id": None, "cat": None}
+
+
+def test_active_game_run_none_when_cat_is_memorial(client, monkeypatch):
+    """IN_PROGRESS run whose cat is MEMORIAL (not ALIVE) -> {run_id: null, cat: null}."""
+    override_auth(user_id=USER_ID)
+    tables = {
+        "game_run": [make_game_run_row(id="run-active", cat_id=CAT_ID)],
+        "cat": [make_cat_row(status="MEMORIAL")],
+        "ability": make_ability_rows(),
+    }
+    install_fake_supabase(monkeypatch, tables)
+
+    resp = client.get("/api/game-runs/active")
+    assert resp.status_code == 200
+    assert resp.json() == {"run_id": None, "cat": None}
+
+
+def test_active_game_run_only_considers_authenticated_users_runs(
+    client, monkeypatch
+):
+    """Another user's IN_PROGRESS run is ignored -> {run_id: null, cat: null}."""
+    override_auth(user_id=USER_ID)
+    tables = {
+        "game_run": [
+            make_game_run_row(
+                id="run-other", user_id=OTHER_USER_ID, cat_id="cat-other"
+            )
+        ],
+        "cat": [make_cat_row(id="cat-other", user_id=OTHER_USER_ID, status="ALIVE")],
+        "ability": make_ability_rows("cat-other"),
+    }
+    install_fake_supabase(monkeypatch, tables)
+
+    resp = client.get("/api/game-runs/active")
+    assert resp.status_code == 200
+    assert resp.json() == {"run_id": None, "cat": None}
