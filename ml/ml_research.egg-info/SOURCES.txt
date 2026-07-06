@@ -1,0 +1,8 @@
+pyproject.toml
+ml_research.egg-info/PKG-INFO
+ml_research.egg-info/SOURCES.txt
+ml_research.egg-info/dependency_links.txt
+ml_research.egg-info/requires.txt
+ml_research.egg-info/top_level.txt
+segmentation/__init__.py
+segmentation/remove_background.py

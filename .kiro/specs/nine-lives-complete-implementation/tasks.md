@@ -349,33 +349,33 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     - Round progression across multiple rounds
     - Memorial display with multiple cats
 
-- [ ] 10. Home & Overworld pages
-  - [ ] 10.1 Backend: add `GET /api/game-runs/active`
+- [x] 10. Home & Overworld pages
+  - [x] 10.1 Backend: add `GET /api/game-runs/active`
     - In `backend/routers/data.py`, add `GET /api/game-runs/active` (auth-required, reusing the existing auth dependency from task 3.5 → 401 if missing/invalid)
     - Return the authenticated user's most recent `game_run` with `status = IN_PROGRESS` whose associated cat has `status = ALIVE`, ordered by `created_at` descending, as `ActiveGameRunResponse { run_id, cat }` (serialize the cat via the existing `CatResponse`); enforce ownership by `user_id` (RLS as defense-in-depth)
     - Return `{ run_id: null, cat: null }` when the user has no such active run
     - Add `ActiveGameRunResponse` to `models/schemas.py` with `run_id: Optional[str] = None` and `cat: Optional[CatResponse] = None`
     - _Requirements: 24.6, 24.7_
 
-  - [ ]* 10.2 Write unit test for `GET /api/game-runs/active` (pytest, mock Supabase)
+  - [x]* 10.2 Write unit test for `GET /api/game-runs/active` (pytest, mock Supabase)
     - Returns `{ run_id, cat }` when an IN_PROGRESS run whose cat is ALIVE exists
     - Returns `{ run_id: null, cat: null }` when no active run exists
     - Returns 401 when the Authorization header is missing or invalid
     - _Requirements: 24.6, 24.7_
 
-  - [ ] 10.3 Frontend: routing change + HomePage
+  - [x] 10.3 Frontend: routing change + HomePage
     - Update `frontend/src/App.tsx`: make `/` render the new public `HomePage` (OUTSIDE `AuthGuard`, still inside the `ErrorBoundary`); move DigitizePage to a protected `/digitize` route; add a protected `/overworld` route. Keep `/login` public and BattlePage/MemorialPage protected
     - Add `getActiveGameRun()` to `frontend/src/api/data.ts` (calls `GET /api/game-runs/active` with the auth token, returns `{ run_id, cat }`) plus a matching `ActiveGameRunResponse` type
     - Create `frontend/src/pages/HomePage.tsx` (public): render the title "Nine Lives"; logged-out → tagline + "Sign In" (→ `/login`); logged-in → intro + "New Game" (→ `/digitize`), "Memorial" (→ `/memorial`), and "Continue" (→ `/battle/:runId`) shown when `getActiveGameRun()` returns a non-null run. Use `useAuth()` and the existing 8bitcn components / retro theme
     - _Requirements: 25.1, 25.2, 32.1, 32.2, 32.3, 32.4, 32.5, 32.6_
 
-  - [ ] 10.4 Frontend: OverworldPage + post-victory routing + background assets
+  - [x] 10.4 Frontend: OverworldPage + post-victory routing + background assets
     - Create `frontend/src/assets/backgrounds/` with a placeholder file (e.g. a `README.md` note) since real background images are added manually later; reference a background via CSS `url()` with a solid-color fallback so a missing image does not break the build
     - Create `frontend/src/pages/OverworldPage.tsx` (protected): fullscreen background; nodes "Next Enemy" (→ `/battle/:runId`), "Memorial" (→ `/memorial`), and an optional disabled "Rest" placeholder. Resolve `run_id` via `getActiveGameRun()` on mount (refresh-safe). Style with 8bitcn components / retro theme
     - Update `frontend/src/pages/BattlePage.tsx`: when the player wins a round (enemy defeated / `current_round` advanced within the action response — reuse the existing round-increment detection from the round-completion polish), show a dismissible victory popup; on dismiss, navigate to `/overworld`. Do NOT change battle/combat logic or the game-over → `/memorial` behavior
     - _Requirements: 25.5, 33.1, 33.2, 33.3, 33.4, 33.5, 33.6, 33.7, 33.8_
 
-  - [ ]* 10.5 Write frontend tests for HomePage, OverworldPage, and BattlePage victory flow (Vitest)
+  - [x]* 10.5 Write frontend tests for HomePage, OverworldPage, and BattlePage victory flow (Vitest)
     - HomePage: public render (title + logged-out "Sign In"); logged-in "New Game"/"Memorial"/"Continue" navigation ("Continue" shown only when an active run exists)
     - OverworldPage: resolves run id via `getActiveGameRun()`, "Next Enemy"/"Memorial" navigation, "Rest" rendered disabled
     - BattlePage: victory popup shown on round win and dismiss navigates to `/overworld`; game-over still navigates to `/memorial`
