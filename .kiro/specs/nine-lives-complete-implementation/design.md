@@ -2,13 +2,13 @@
 
 ## Overview
 
-Nine Lives is a cat digitization roguelike game where users upload cat photos that are transformed into playable characters through ML/AI processing. The game features turn-based combat with a 9-lives system, culminating in a memorial for fallen cats. This design covers the complete implementation of: (1) Cat Digitization Pipeline using HuggingFace, OpenCV, Claude Haiku, and Gemini 2.5 Flash, (2) Supabase database integration with RLS policies, (3) Battle system with abilities, mana, cooldowns, and enemy AI, (4) Memorial system for fallen cats, and (5) Complete game flow integration.
+Nine Lives is a cat digitization roguelike game where users upload cat photos that are transformed into playable characters through ML/AI processing. The game features turn-based combat with a 9-lives system, culminating in a memorial for fallen cats. This design covers the complete implementation of: (1) Cat Digitization Pipeline using a local HuggingFace `transformers` breed classifier, YOLO segmentation + scikit-learn KMeans color extraction, Gemini 2.5 Flash card generation, and FLUX.1-schnell avatar generation, (2) Supabase database integration with RLS policies, (3) Battle system with abilities, mana, cooldowns, and enemy AI, (4) Memorial system for fallen cats, and (5) Complete game flow integration.
 
 **Architecture principle:** The backend is the sole owner of all data access. Beyond being the authoritative game engine (all combat calculations, enemy generation, state mutations, and persistence happen exclusively on the backend), the backend also mediates **every** database read and write. The frontend never reads from or writes to the database directly. It uses the Supabase client solely for authentication — login, session management, and obtaining the JWT — and calls authenticated backend HTTP endpoints for all data operations (memorial cats, personal notes, game_run creation, battle state). The frontend is a rendering and input layer: it submits player actions and data requests via authenticated backend endpoints and renders the data returned in the response. It has no direct database access and performs no combat math.
 
 **Current State:** Design docs complete, frontend battle loop partially working with mock data, backend skeleton exists with empty service files.
 
-**Tech Stack:** React + Vite + TypeScript + Tailwind CSS v4 + shadcn/ui + 8bitcn (retro 8-bit component registry) + "Press Start 2P" pixel font + framer-motion (frontend), Python FastAPI (backend), Supabase (database + auth), HuggingFace API (breed classification), OpenCV (color extraction), Gemini API (card generation), Gemini 2.5 Flash (avatar generation).
+**Tech Stack:** React + Vite + TypeScript + Tailwind CSS v4 + shadcn/ui + 8bitcn (retro 8-bit component registry) + "Press Start 2P" pixel font + framer-motion (frontend), Python FastAPI (backend), Supabase (database + auth), local HuggingFace `transformers` ViT (breed classification, `dima806/cat_breed_image_detection`), YOLO segmentation (`yolo11s-seg.pt` via `ultralytics`) + scikit-learn KMeans (color extraction), Gemini 2.5 Flash via `google-genai` (card generation), FLUX.1-schnell via HuggingFace Inference Providers / fal.ai using `huggingface_hub.InferenceClient` (avatar generation).
 
 **Visual direction:** The frontend adopts a retro 8-bit aesthetic. UI components use shadcn/ui conventions sourced from the [8bitcn](https://8bitcn.com) registry, and generated cat avatars follow a matching retro pixel-art style (see the UI / Design System subsection and `docs/retro-avatar-prompt.md`). This is a presentational direction only — combat, battle, data, auth, and memorial functional design are unchanged.
 
@@ -35,6 +35,7 @@ graph TB
         BattleStart[POST /api/battle/start]
         BattleAction[POST /api/battle/action]
         Classifier[Breed Classifier]
+        Segmenter[Cat Segmenter - YOLO helper]
         ColorExtractor[Color Extractor]
         CardGenerator[Card Generator]
         ImageGenerator[Avatar Generator]
@@ -42,11 +43,15 @@ graph TB
         EnemyGen[Enemy Gen Service]
     end
 
+    subgraph "Local Inference - in-process"
+        ViT[transformers ViT - dima806/cat_breed_image_detection]
+        YOLO[YOLO11s-seg - ultralytics, COCO class 15]
+        KMeans[scikit-learn KMeans]
+    end
+
     subgraph "External Services"
-        HF[HuggingFace API]
-        CV[OpenCV k-means]
-        GeminiCard[Gemini API]
-        Gemini[Gemini 2.5 Flash]
+        GeminiCard[Gemini 2.5 Flash - google-genai]
+        Flux[FLUX.1-schnell - HF Inference Providers / fal.ai]
     end
 
     subgraph "Database - Supabase"
@@ -89,10 +94,12 @@ graph TB
     DigitizeEndpoint --> ImageGenerator
     DigitizeEndpoint --> DB
 
-    Classifier --> HF
-    ColorExtractor --> CV
+    Classifier --> ViT
+    ColorExtractor --> Segmenter
+    Segmenter --> YOLO
+    ColorExtractor --> KMeans
     CardGenerator --> GeminiCard
-    ImageGenerator --> Gemini
+    ImageGenerator --> Flux
 
     HomePage --> Auth
     DigitizePage --> Auth
@@ -121,13 +128,13 @@ sequenceDiagram
     S-->>B: run_id
     B-->>D: run_id
     D->>B: POST /api/digitize (includes cat name + optional personality)
-    B->>ML: Classify breed (HuggingFace)
+    B->>ML: Classify breed (local transformers ViT)
     ML-->>B: breed name
-    B->>ML: Extract colors (OpenCV)
-    ML-->>B: dominant colors
-    B->>ML: Generate card (Claude Haiku)
+    B->>ML: Segment cat (YOLO) + extract colors (scikit-learn KMeans)
+    ML-->>B: dominant colors + per-color ratios
+    B->>ML: Generate card (Gemini 2.5 Flash)
     ML-->>B: stats, abilities, lore
-    B->>ML: Generate avatar (Gemini 2.5 Flash)
+    B->>ML: Generate avatar (FLUX.1-schnell)
     ML-->>B: avatar image URL
     B->>S: Create cat record with all data
     S-->>B: cat_id
@@ -619,7 +626,7 @@ def generate_enemy(round_num: int) -> Enemy
 
 #### 8. Digitize Router (`routers/digitize.py`)
 
-**Purpose**: Orchestrate cat digitization pipeline
+**Purpose**: HTTP entry point for cat digitization — validates the request, then delegates the pipeline to the `digitize.py` orchestrator.
 
 **Interface**:
 
@@ -630,48 +637,93 @@ async def digitize_cat(file: UploadFile, game_run_id: str, user_id: str, cat_nam
 
 **Responsibilities**:
 
-- Validate uploaded image file
-- Call breed classifier service
-- Call color extractor service
-- Call card generator service (stats, abilities, lore) — passing the `personality` context (when provided) so it can influence generation in the real pipeline
-- Call image generator service (avatar)
-- Create cat record in Supabase, persisting `personality` on the cat record
-- Update game_run with cat_id
-- Return complete cat data
+- Validate uploaded image file (type JPEG/PNG/WebP, size ≤10MB)
+- Read the upload into `image_bytes` and call the `digitize.py` orchestrator (#8b), passing `cat_name`, `game_run_id`, `user_id`, and the optional `personality`
+- Return the complete cat data (`CatResponse`) produced by the orchestrator
 
-**Note**: The current mock implementation ignores `personality` for stat generation but still stores it on the cat record so it is available for the real pipeline and can enrich the memorial later.
+**Run location**: The entire pipeline runs as **backend services** — the notebook workflow (`ml/notebooks/01_breed_classification`, `02_color_extraction`, `03_card_generation`, `04_avatar_generation`, plus `ml/segmentation/remove_background.py`) has been ported into the backend as the modules described below.
 
-#### 9. Breed Classifier Service (`services/classifier.py`)
+#### 8b. Digitize Orchestrator (`services/digitize.py`)
 
-**Purpose**: Classify cat breed from photo
+**Purpose**: Orchestrate the full backend digitization pipeline. This **replaces the current random-stat mock** when wired in.
 
 **Interface**:
 
 ```python
-async def classify_breed(image_bytes: bytes) -> str
+async def digitize(
+    image_bytes: bytes,
+    cat_name: str,
+    game_run_id: str,
+    user_id: str,
+    personality: Optional[str] = None,
+) -> Cat
 ```
 
-#### 10. Color Extractor Service (`services/color_extractor.py`)
+**Pipeline order**:
 
-**Purpose**: Extract dominant fur colors from photo
+1. `classify_breed(image_bytes)` → breed name (#9)
+2. `extract_colors(image_bytes)` → segment the cat, then KMeans → list of `{ hex, ratio }` (#10)
+3. `generate_card(cat_name, breed, colors, personality)` → stats, abilities, lore, image_prompt (#11)
+4. `generate_avatar(card["image_prompt"])` → public avatar URL (#12)
+5. Persist the cat record in Supabase (including `personality` and `avatar_url`) and update the `game_run` with `cat_id`
+6. Return the complete cat
+
+**Note**: `personality` (when provided) is threaded into `generate_card` so it influences class, stats, abilities, and lore, and is also persisted on the cat record for the memorial.
+
+#### 9. Breed Classifier (`services/classify.py`)
+
+**Purpose**: Classify cat breed from photo using a **local HuggingFace `transformers` model** running **in-process** — the fine-tuned ViT `dima806/cat_breed_image_detection` (~77% accuracy). This is local inference, **not** the HuggingFace Inference API.
 
 **Interface**:
 
 ```python
-async def extract_colors(image_bytes: bytes, n_colors: int = 3) -> list[str]
+def classify_breed(image_bytes: bytes) -> str
 ```
 
-#### 11. Card Generator Service (`services/card_generator.py`)
+**Behavior**:
 
-**Purpose**: Generate cat stats, abilities, and lore using LLM
+- Load the image from bytes and run the `transformers` image-classification pipeline; return the top-1 label.
+- **Error handling**: On any failure (bad image, model load error), fall back to a default breed (e.g. `"Domestic Shorthair"`). There is **no** exponential-backoff / HTTP-retry logic — this is local, in-process inference, not a network call.
+
+#### 10. Color Extractor (`services/extract_colors.py`)
+
+**Purpose**: Extract the dominant fur colors from the photo. It first **segments the cat** (so background pixels do not bias the result), then runs **scikit-learn KMeans** on the cat pixels.
 
 **Interface**:
 
 ```python
-async def generate_card(breed: str, colors: list[str], personality: Optional[str] = None) -> dict[str, Any]
+def extract_colors(image_bytes: bytes, n_colors: int = 5) -> list[dict]
+# each item: { "hex": str, "ratio": float }
 ```
 
-**Note**: When `personality` is provided it is incorporated into the Gemini prompt to influence name-consistency, class, stats, abilities, and lore.
+**Behavior**:
+
+- **Segmentation (internal helper)**: An internal `_remove_background(image)` helper (mirroring `ml/segmentation/remove_background.py`) runs YOLO segmentation (`yolo11s-seg.pt` via `ultralytics`, COCO class **15** = "cat"), builds a union mask of all detected cat instances, and returns the image as RGBA with everything outside the cat made **transparent**.
+- **Clustering**: Select only the non-transparent (cat) pixels, run scikit-learn `KMeans` with **5 clusters** (`n_colors`, default 5), and compute a normalized label histogram.
+- **Returns**: a list of 5 items, each `{ "hex": str, "ratio": float }`, where `hex` is the cluster centroid color as `#RRGGBB` and `ratio` is the fraction of cat pixels assigned to that cluster (the histogram value; ratios sum to ≈1.0). Operating on the masked (transparent-background) image ensures background pixels do not bias the extracted colors.
+
+**Segmentation approach — why YOLO**: `yolo11s-seg.pt` (ultralytics) was chosen after evaluating and rejecting alternatives: `rembg` requires Python 3.9 (incompatible with the current 3.14), RMBG-1.4 dimmed the image, and SAM2 segmented the image center rather than the cat object. YOLO instance segmentation reliably isolates the cat via COCO class 15.
+
+#### 11. Card Generator (`services/generate_card.py`)
+
+**Purpose**: Generate cat stats, abilities, and lore using **Gemini 2.5 Flash** (via `google-genai`) with a structured-JSON response.
+
+**Interface**:
+
+```python
+def generate_card(
+    cat_name: str,
+    breed: str,
+    colors: list[dict],           # [{ "hex": str, "ratio": float }, ...]
+    personality: Optional[str] = None,
+) -> dict[str, Any]
+```
+
+**Behavior**:
+
+- Build a prompt from `cat_name`, `breed`, the `colors` data, and the optional `personality`, and call `gemini-2.5-flash` with `response_mime_type="application/json"`, parsing the returned JSON.
+- The per-color **ratio must be passed into the prompt** so the LLM knows how dominant each color is (e.g. a color at ratio 0.6 is the primary coat color vs a 0.05 accent), letting it weight color-driven flavor accordingly.
+- When `personality` is provided it is incorporated into the prompt to influence class, stats, abilities, and lore.
 
 **Returns**:
 
@@ -692,25 +744,23 @@ async def generate_card(breed: str, colors: list[str], personality: Optional[str
 
 **Note (retro avatar style)**: The per-cat `image_prompt` produced here carries only the cat-specific subject details (breed, colors, class, personality). It does **not** embed the visual art style — the canonical retro pixel-art style is defined once in `docs/retro-avatar-prompt.md` and applied downstream by the Avatar Generator (#12), keeping every cat visually cohesive with the 8-bit UI.
 
-#### 12. Image Generator Service (`services/image_generator.py`)
+#### 12. Avatar Generator (`services/generate_avatar.py`)
 
-**Purpose**: Generate cat avatar using AI image generation
+**Purpose**: Generate the cat avatar using **FLUX.1-schnell** via **HuggingFace Inference Providers (fal.ai)**, called through `huggingface_hub.InferenceClient`.
 
 **Interface**:
 
 ```python
-async def generate_avatar(image_prompt: str) -> str
+def generate_avatar(image_prompt: str) -> str
 ```
 
 **Responsibilities**:
 
-- Wrap the per-cat `image_prompt` with the fixed positive/negative retro pixel-art **style blocks** from `docs/retro-avatar-prompt.md` before calling the image model. The style block is kept byte-for-byte identical across cats — only the per-cat subject changes — so every avatar matches the retro 8-bit (8bitcn) UI.
-- Call Gemini 2.5 Flash Image API (for prompt-only models with no negative field, append the negatives as an "Avoid:" clause per the doc)
-- Generate stylized cat avatar from text prompt
-- Upload image to Supabase storage
-- Return public URL
+- Wrap the per-cat `image_prompt` with the fixed retro pixel-art **style block** from `docs/retro-avatar-prompt.md` before calling the model. The style block is kept byte-for-byte identical across cats — only the per-cat subject changes — so every avatar matches the retro 8-bit (8bitcn) UI.
+- Call FLUX.1-schnell (`black-forest-labs/FLUX.1-schnell`) via `InferenceClient(provider="fal-ai", ...).text_to_image(...)`.
+- Upload the generated image to Supabase storage and return the public URL.
 
-**Note**: `docs/retro-avatar-prompt.md` is the single source of truth for avatar *style*; this service is where the wrapper is applied once the ML pipeline is implemented.
+**Note (no negative prompt)**: FLUX.1-schnell is **guidance-free** and does **not** support a negative prompt. `docs/retro-avatar-prompt.md` remains the single source of truth for style, but the "negative"/"Avoid:" terms are **folded into the positive prompt** (e.g. "…no text, no UI elements, no blurriness"). There is no separate negative field for this model — everything the avatar should avoid is expressed positively within the single prompt string.
 
 
 ## Data Models
@@ -872,7 +922,7 @@ For any file selected for upload, the system SHALL accept the file if and only i
 **Validates: Requirements 1.1, 27.1**
 
 ### Property 2: Hex Color Format
-For any colors extracted from cat photos, each color SHALL be a valid hex string matching #[0-9A-Fa-f]{6}.
+For any colors extracted from cat photos, each returned item SHALL contain a `hex` field that is a valid hex string matching #[0-9A-Fa-f]{6} and a `ratio` field in [0,1].
 **Validates: Requirements 3.2**
 
 ### Property 3: Card Generation Schema Completeness
@@ -999,8 +1049,10 @@ When an enemy uses a SHIELD-type ability, the Battle_System SHALL add the abilit
 **Response**: Validate type (JPEG/PNG/WebP) and size (max 10MB); display error; allow retry.
 
 ### Error Scenario 2: ML/AI Service Failure
-**Condition**: HuggingFace, Claude, or Gemini API call fails
-**Response**: Retry with exponential backoff (up to 3 attempts). For breed: fall back to "Domestic Shorthair". If all retries fail, allow user to restart digitization.
+**Condition**: A digitization step fails.
+**Response**:
+- **Breed classification** (local, in-process `transformers` inference): on failure, fall back to a default breed ("Domestic Shorthair"). No HTTP retry / exponential backoff — it is not a network call.
+- **Card generation (Gemini 2.5 Flash)** and **avatar generation (FLUX.1-schnell via HF Inference Providers)** are external calls: retry with exponential backoff (up to 3 attempts). If all retries fail, allow the user to restart digitization.
 
 ### Error Scenario 3: Database Write Failure
 **Condition**: Supabase write fails during state persistence
@@ -1115,13 +1167,21 @@ def test_game_state_round_trip(state):
 
 ### Backend
 
-- Python 3.11+, FastAPI 0.104+, Pydantic 2+
-- httpx, python-multipart, opencv-python, pillow
-- anthropic (Claude API), google-generativeai (Gemini API), huggingface-hub
+- Python **>= 3.14**, FastAPI 0.104+, Pydantic 2+
+- httpx, python-multipart, pillow
+- **Local inference**: torch, torchvision, ultralytics (YOLO segmentation), transformers (ViT breed classifier), scikit-learn (KMeans), opencv-python, numpy
+- **AI/image generation**: google-genai (Gemini 2.5 Flash card generation), huggingface-hub (FLUX.1-schnell avatar via Inference Providers / fal.ai)
 - supabase-py (database client + JWT verification)
 - python-jose (optional — additional JWT claims validation)
 
 ### External Services
 
 - Supabase (database, auth, storage)
-- HuggingFace Inference API, Claude Haiku API, Gemini 2.5 Flash
+- Gemini 2.5 Flash (via `google-genai`) — card generation
+- FLUX.1-schnell via HuggingFace Inference Providers / fal.ai — avatar generation
+
+(Breed classification and color extraction/segmentation now run **locally in-process** in the backend and are **not** external services.)
+
+### Deployment Note
+
+Porting the pipeline into the backend means the backend now carries heavy **local-inference dependencies** (torch, torchvision, ultralytics, transformers, scikit-learn, opencv-python, pillow, google-genai, huggingface-hub) and **model weight files**: the ViT breed classifier weights (`dima806/cat_breed_image_detection`) download on first use, and `yolo11s-seg.pt` is fetched/loaded by ultralytics. This materially affects backend **image size, memory footprint, and cold-start time**, and should be accounted for in deployment sizing (and ideally by warming/caching the models at startup). The backend requires **Python >= 3.14**.

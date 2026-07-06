@@ -58,10 +58,9 @@ This document specifies the functional requirements for the complete implementat
 
 #### Acceptance Criteria
 
-1. WHEN a valid cat photo is provided, THE Digitization_Pipeline SHALL call the HuggingFace Inference API to classify the breed
+1. WHEN a valid cat photo is provided, THE Digitization_Pipeline SHALL run a local, in-process HuggingFace `transformers` image-classification model (`dima806/cat_breed_image_detection`, a fine-tuned ViT) to classify the breed
 2. WHEN the breed classification succeeds, THE Digitization_Pipeline SHALL return a breed name
-3. IF the HuggingFace API call fails, THEN THE Digitization_Pipeline SHALL retry up to 3 times with exponential backoff
-4. IF all retry attempts fail, THEN THE Digitization_Pipeline SHALL use a fallback default breed value
+3. IF the breed classification fails, THEN THE Digitization_Pipeline SHALL use a fallback default breed value
 
 ### Requirement 3: Color Extraction
 
@@ -69,9 +68,10 @@ This document specifies the functional requirements for the complete implementat
 
 #### Acceptance Criteria
 
-1. WHEN a valid cat photo is provided, THE Digitization_Pipeline SHALL use OpenCV k-means clustering to extract the 3 dominant colors
-2. WHEN color extraction completes, THE Digitization_Pipeline SHALL return colors as hex code strings
-3. WHEN color extraction fails, THE Digitization_Pipeline SHALL retry up to 3 times
+1. WHEN a valid cat photo is provided, THE Digitization_Pipeline SHALL first segment the cat from the photo using YOLO instance segmentation (`yolo11s-seg.pt`, COCO class 15 = cat) to exclude background pixels, and then extract the 5 dominant colors from the cat pixels using scikit-learn KMeans with 5 clusters
+2. WHEN color extraction completes, THE Digitization_Pipeline SHALL return each color as a hex code string together with its per-color pixel ratio, defined as the fraction of cat pixels assigned to that color cluster
+3. WHEN color extraction fails, THE Digitization_Pipeline SHALL retry the extraction step up to 3 times
+4. WHEN color extraction completes, THE Digitization_Pipeline SHALL provide the extracted color and per-color ratio data to the card-generation step so that color dominance informs card generation
 
 ### Requirement 4: Character Card Generation
 
@@ -89,8 +89,9 @@ This document specifies the functional requirements for the complete implementat
 8. WHEN generating stats, THE Digitization_Pipeline SHALL ensure defence is between 3 and 40
 9. WHEN generating stats, THE Digitization_Pipeline SHALL ensure speed is between 5 and 50
 10. WHEN generating stats, THE Digitization_Pipeline SHALL ensure max mana is between 50 and 200
-11. WHEN a personality description is provided, THE Digitization_Pipeline SHALL incorporate the personality description into the Claude Haiku prompt as context influencing the generated class, stats, abilities, and lore
+11. WHEN a personality description is provided, THE Digitization_Pipeline SHALL incorporate the personality description into the Gemini 2.5 Flash prompt as context influencing the generated class, stats, abilities, and lore
 12. WHERE no personality description is provided, THE Digitization_Pipeline SHALL generate the character card from the breed and colors alone
+13. WHEN generating the character card, THE Digitization_Pipeline SHALL provide the cat name, breed, and the color and per-color ratio data to the Gemini 2.5 Flash card generator as inputs
 
 ### Requirement 5: Avatar Image Generation
 
@@ -100,10 +101,10 @@ This document specifies the functional requirements for the complete implementat
 
 #### Acceptance Criteria
 
-1. WHEN an image prompt is available, THE Digitization_Pipeline SHALL call the Gemini 2.5 Flash API to generate an avatar image
+1. WHEN an image prompt is available, THE Digitization_Pipeline SHALL generate an avatar image using FLUX.1-schnell via HuggingFace Inference Providers (fal.ai)
 2. WHEN avatar generation completes, THE Digitization_Pipeline SHALL upload the image to Supabase storage
 3. WHEN the upload completes, THE Digitization_Pipeline SHALL return a public URL for the avatar
-4. WHEN generating a cat avatar, THE Digitization_Pipeline SHALL apply the canonical retro pixel-art style, defined as the fixed positive and negative style blocks in `docs/retro-avatar-prompt.md`, to the per-cat image prompt so that all generated avatars are visually consistent with the retro 8-bit user interface
+4. WHEN generating a cat avatar, THE Digitization_Pipeline SHALL apply the canonical retro pixel-art style defined in `docs/retro-avatar-prompt.md` to the per-cat image prompt, expressing both the desired retro pixel-art style and the terms to avoid within a single positive prompt, because FLUX.1-schnell is guidance-free and provides no negative-prompt field, so that all generated avatars are visually consistent with the retro 8-bit user interface
 
 ### Requirement 6: Cat Record Persistence
 

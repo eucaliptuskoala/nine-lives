@@ -1,10 +1,19 @@
 """
 Card Generator — Gemini-powered cat card stat generation.
 
-Calls Gemini API with breed, colors, and personality to produce
-bounded stats, class, lore, abilities, and an image_prompt.
+Calls Gemini 2.5 Flash (via the httpx REST API) with the breed, extracted fur
+colors (each with a dominance ratio), and optional personality to produce
+bounded stats, a class, lore, exactly 4 abilities (exactly 1 special), and an
+image_prompt.
 
-Related: Requirements 1.3, 6.3
+Colors are provided as a list of {"hex": str, "ratio": float} dicts (the output
+of services/extract_colors.py) so the prompt can convey each color's dominance.
+
+Note: `google-genai` is listed as an optional alternative client in the `ml`
+extra, but this module intentionally uses the lightweight httpx REST call so the
+card generator has no hard dependency on the heavy ML packages.
+
+Related: Requirements 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 4.9, 4.10, 31.1, 31.2
 """
 
 import json
@@ -24,21 +33,38 @@ GEMINI_URL = (
 REQUEST_TIMEOUT = 45
 
 
+def _format_colors(colors: list[dict]) -> str:
+    """Render colors with their dominance ratios as prompt-friendly lines.
+
+    E.g. `#C0A080 (60%)`, `#8B6F47 (25%)` — the ratio (as a percentage) MUST
+    appear so the LLM understands each color's dominance.
+    """
+    lines = []
+    for color in colors:
+        hex_code = color.get("hex", "")
+        ratio = color.get("ratio", 0.0)
+        percent = round(float(ratio) * 100)
+        lines.append(f"{hex_code} ({percent}%)")
+    return ", ".join(lines) if lines else "unknown"
+
+
 def build_prompt(
     cat_name: str,
     breed: str,
-    colors: list[str],
+    colors: list[dict],
     personality: str | None = None,
 ) -> str:
     personality_clause = ""
     if personality:
         personality_clause = f"\nThe cat's personality: {personality}\n"
 
+    colors_text = _format_colors(colors)
+
     return f"""You are a game designer for a cat-themed roguelike. Generate a playable character card.
 
 Cat name: {cat_name}
 Breed: {breed}
-Fur colors: {colors}
+Fur colors (with their dominance, most to least prominent): {colors_text}
 {personality_clause}
 Return ONLY valid JSON with these exact fields:
 - "name": string (the cat's name)
@@ -99,7 +125,7 @@ def validate_card(card: dict) -> list[str]:
 def generate_card(
     cat_name: str,
     breed: str,
-    colors: list[str],
+    colors: list[dict],
     personality: str | None = None,
 ) -> dict:
     if not GEMINI_API_KEY:

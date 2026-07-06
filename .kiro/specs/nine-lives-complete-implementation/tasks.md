@@ -6,7 +6,7 @@ This implementation plan covers the complete Nine Lives game. The work is split 
 
 **Track A — Playable Game (current focus):** Architecture refactoring, authentication, backend battle engine, frontend wiring, UI polish, and memorial system. This track produces a fully playable game end-to-end using the existing mock/random stat generation. No ML required.
 
-**Track B — Digitization Pipeline (pending research):** HuggingFace breed classification, OpenCV color extraction, Claude Haiku card generation, and Gemini 2.5 Flash avatar generation. Blocked until ML research is complete. Plugs into the existing `/api/digitize` endpoint once ready.
+**Track B — Digitization Pipeline:** Local HuggingFace `transformers` ViT breed classification (`dima806/cat_breed_image_detection`), YOLO segmentation (`yolo11s-seg.pt`) + scikit-learn KMeans color extraction, Gemini 2.5 Flash card generation, and FLUX.1-schnell avatar generation. ML research is complete; the pipeline is implemented as backend services ported from `ml/notebooks` and plugs into the existing `/api/digitize` endpoint.
 
 **Architecture principle:** The backend is the sole owner of all data access. Beyond owning all combat logic and game state, the backend mediates every database read and write. The frontend never reads from or writes to the database directly — it uses the Supabase client solely for authentication (login, session, JWT) and performs all data operations (game_run creation, memorial reads, note updates, battle state) through authenticated backend HTTP endpoints. The frontend is a rendering and input layer only.
 
@@ -390,72 +390,91 @@ This implementation plan covers the complete Nine Lives game. The work is split 
   - Ask the user if questions arise.
 
 ---
-## Track B — Digitization Pipeline (pending ML research)
+## Track B — Digitization Pipeline
 ---
 
-- [ ] 12. Implement backend digitization pipeline services
-  - [ ] 12.1 Implement breed classifier service
-    - `services/classifier.py` — `classify_breed(image_bytes: bytes) -> str`
-    - HuggingFace Inference API, retry with exponential backoff (3 attempts), fallback "Domestic Shorthair"
-    - _Requirements: 2.1, 2.2, 2.3, 2.4_
+- [x] 12. Implement backend digitization pipeline services
+  - [x] 12.1 Add backend ML dependencies and model-weights setup
+    - Add the backend ML dependencies to the backend dependency manifest (`backend/requirements.txt` / `pyproject.toml`, targeting Python >= 3.14): `torch`, `torchvision`, `ultralytics`, `transformers`, `scikit-learn`, `opencv-python`, `pillow`, `numpy`, `google-genai`, `huggingface-hub`
+    - Note the model weights (no manual download step required): the breed-classifier ViT (`dima806/cat_breed_image_detection`) is pulled from HuggingFace on first use, and `yolo11s-seg.pt` is fetched by `ultralytics` on first use
+    - _Requirements: 2.1, 3.1, 4.1, 5.1_
 
-  - [ ]* 12.2 Write unit tests for breed classifier
-    - Test success, retry logic with mocked failures, fallback, invalid image bytes
+  - [x] 12.2 Implement breed classifier service
+    - `services/classify.py` — `classify_breed(image_bytes: bytes) -> str`
+    - Load a LOCAL, in-process HuggingFace `transformers` image-classification ViT (`dima806/cat_breed_image_detection`); load the image from bytes and return the top-1 predicted label
+    - On any failure (bad image, model load error) fall back to a default breed (`"Domestic Shorthair"`). This is local, in-process inference — there is NO HTTP retry/exponential-backoff logic
+    - _Requirements: 2.1, 2.2, 2.3_
 
-  - [ ] 12.3 Implement color extractor service
-    - `services/color_extractor.py` — `extract_colors(image_bytes: bytes, n_colors: int = 3) -> list[str]`
-    - OpenCV k-means clustering, hex output (#RRGGBB), retry up to 3 times
-    - _Requirements: 3.1, 3.2, 3.3_
+  - [x]* 12.3 Write unit tests for breed classifier
+    - Test success (top-1 label returned), fallback to the default breed on failure, and invalid image bytes
 
-  - [ ]* 12.4 Write property test for color extraction
-    - **Property 2: Hex Color Format** — all extracted colors match #[0-9A-Fa-f]{6}
+  - [x] 12.4 Implement the cat segmentation helper (feeds color extraction)
+    - Internal `_remove_background(image)` helper inside `services/extract_colors.py`, mirroring `ml/segmentation/remove_background.py`
+    - Run YOLO instance segmentation (`yolo11s-seg.pt` via `ultralytics`, COCO class 15 = cat); build a union mask of all detected cat instances and return the image as RGBA with every non-cat pixel made transparent
+    - _Requirements: 3.1_
 
-  - [ ] 12.5 Implement card generator service
-    - `services/card_generator.py` — `generate_card(breed: str, colors: list[str], personality: Optional[str] = None) -> dict`
-    - Gemini API (gemini-2.5-flash), validate stats in bounds, exactly 4 abilities (1 special), retry logic
-    - When `personality` is provided, weave it into the Gemini prompt so it influences the generated class, stats, abilities, and lore
-    - _Requirements: 4.1–4.10, 4.11, 4.12, 31.1, 31.2_
+  - [x] 12.5 Implement color extractor service
+    - `services/extract_colors.py` — `extract_colors(image_bytes: bytes, n_colors: int = 5) -> list[dict]` (each item `{ "hex": str, "ratio": float }`)
+    - Segment the cat first via the `_remove_background` helper (Task 12.4), then run scikit-learn `KMeans` with 5 clusters on the non-transparent cat pixels
+    - Return the 5 dominant colors as hex `#RRGGBB` AND the per-color pixel ratio (fraction of cat pixels assigned to each cluster); ratios sum to ≈1.0
+    - Retry the extraction step up to 3 times on failure
+    - _Requirements: 3.1, 3.2, 3.3, 3.4_
 
-  - [ ]* 12.6 Write property tests for card generation
+  - [x]* 12.6 Write property test for color extraction
+    - **Property 2: Hex Color Format** — each returned item's `hex` matches #[0-9A-Fa-f]{6} and its `ratio` ∈ [0,1]
+    - **Validates: Requirements 3.2**
+
+  - [x] 12.7 Implement card generator service
+    - `services/generate_card.py` — `generate_card(cat_name: str, breed: str, colors: list[dict], personality: Optional[str] = None) -> dict` (colors items are `{ "hex": str, "ratio": float }`)
+    - Call Gemini 2.5 Flash (`google-genai`, model `gemini-2.5-flash`) with `response_mime_type="application/json"` and parse the returned JSON
+    - Pass `cat_name`, `breed`, and the per-color `{hex, ratio}` data into the prompt — the per-color RATIO MUST be included so the model knows each color's dominance (e.g. a 0.6 primary coat color vs a 0.05 accent)
+    - Validate stats are within bounds and that there are exactly 4 abilities (exactly 1 special)
+    - When `personality` is provided, weave it into the prompt so it influences the generated class, stats, abilities, and lore
+    - _Requirements: 4.1–4.13, 31.1, 31.2_
+
+  - [x]* 12.8 Write property tests for card generation
     - **Property 3: Card Generation Schema Completeness**
     - **Property 4: Generated Stats Within Bounds**
+    - **Validates: Requirements 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 4.9, 4.10, 31.1, 31.2**
 
-  - [ ] 12.7 Implement avatar generator service
-    - `services/image_generator.py` — `generate_avatar(image_prompt: str) -> str`
-    - Wrap the per-cat `image_prompt` with the fixed positive/negative retro pixel-art style blocks from `docs/retro-avatar-prompt.md` (the single source of truth for avatar style) before calling the image model; keep the style block byte-for-byte identical across cats so every avatar is cohesive with the 8-bit UI. For prompt-only models (Gemini has no negative field) append the negatives as an "Avoid:" clause per the doc
-    - Gemini 2.5 Flash, upload to Supabase storage, return public URL, 30s timeout
+  - [x] 12.9 Implement avatar generator service
+    - `services/generate_avatar.py` — `generate_avatar(image_prompt: str) -> str`
+    - Call FLUX.1-schnell (`black-forest-labs/FLUX.1-schnell`) via HuggingFace Inference Providers (fal.ai) using `huggingface_hub.InferenceClient(provider="fal-ai", ...).text_to_image(...)`
+    - Wrap the per-cat `image_prompt` with the canonical retro pixel-art style block from `docs/retro-avatar-prompt.md` (the single source of truth for avatar style), kept byte-for-byte identical across cats so every avatar is cohesive with the 8-bit UI. Fold the "avoid"/negative terms INTO THE SINGLE POSITIVE PROMPT — FLUX.1-schnell is guidance-free and has no negative-prompt field, so there is no separate negative field
+    - Upload the generated image to Supabase storage and return the public URL; 30s timeout
     - _Requirements: 5.1, 5.2, 5.3, 5.4_
 
-  - [ ]* 12.8 Write integration test for avatar generation
-    - prompt → API call → upload → valid public URL returned
+  - [x]* 12.10 Write integration test for avatar generation
+    - prompt → `InferenceClient` call → Supabase upload → valid public URL returned (mock the client + storage)
 
-- [ ] 13. Wire real ML pipeline into `/api/digitize`
-  - [ ] 13.1 Replace random stat generation with real ML pipeline
-    - Update `routers/digitize.py` to call classifier → color extractor → card generator → avatar generator in sequence
-    - Replace the current random stat/ability generation with outputs from the ML services
-    - Pass the `personality` from the digitize request through to `generate_card` so it influences the generated card
-    - The avatar step applies the canonical retro pixel-art style from `docs/retro-avatar-prompt.md` (wired in Task 12.7's `generate_avatar`)
-    - Keep the same response shape (`CatResponse`) so the frontend requires no changes
-    - _Requirements: 1.1–1.4, 2, 3, 4, 4.11, 5, 6_
+- [ ] 13. Wire the real pipeline into `/api/digitize`
+  - [ ] 13.1 Implement the digitize orchestrator and replace random stat generation
+    - Implement the `services/digitize.py` orchestrator and invoke it from `routers/digitize.py`
+    - Call order: `classify_breed` → segment + `extract_colors` → `generate_card` → `generate_avatar` → persist the cat + update the `game_run`
+    - Thread the `personality` from the digitize request through to `generate_card` so it influences the generated card
+    - Replace the current random stat/ability generation with the ML service outputs
+    - Keep the same `CatResponse` shape so the frontend requires no changes
+    - _Requirements: 1.9, 2, 3, 4, 5, 6_
 
   - [ ]* 13.2 Write property test for image file validation
     - **Property 1: Image File Validation**
+    - **Validates: Requirements 1.1, 27.1**
 
   - [ ]* 13.3 Write integration test for complete digitization pipeline
-    - Full flow: upload → classify → extract → generate → persist → verify DB records
+    - Full flow: upload → classify → segment + extract → generate card → generate avatar → persist → verify DB records (mock the ML services + Supabase)
 
 - [ ] 14. Final checkpoint — Track B complete
-  - All ML services working independently
-  - `/api/digitize` orchestrates full pipeline correctly
-  - Test with multiple real cat images
-  - Verify data persisted to database correctly
+  - All ML services (`classify`, `extract_colors`, `generate_card`, `generate_avatar`) working independently
+  - `services/digitize.py` orchestrates the full pipeline correctly from `routers/digitize.py`
+  - All Track B pytest unit, property, and integration tests pass
+  - Verify data persisted to the database correctly (cat record created + `game_run` updated with `cat_id`)
   - Ask the user if questions arise.
 
 ## Notes
 
 - Tasks marked `*` are optional and can be skipped for faster MVP
 - TypeScript frontend, Python (FastAPI) backend
-- **Track A is fully independent of Track B** — the game is playable end-to-end using the existing random stat mock in `/api/digitize` while ML research continues
+- **Track A is fully independent of Track B** — the game is playable end-to-end using the existing random stat mock in `/api/digitize` while the digitization pipeline is implemented
 - The backend is the sole owner of combat logic and game state; the frontend never computes damage, generates enemies, or writes to `game_run.state` directly
 - The frontend uses the Supabase client **only for authentication** (obtaining the JWT/session); all data access — game_run creation, memorial reads, and note updates — goes through the authenticated backend Data Router (`routers/data.py`), never via direct Supabase reads/writes
 - Task 5.3 (deleting `combat.ts` and `enemyGen.ts`) must be the last step in Task 5
@@ -487,9 +506,12 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     { "id": 19, "tasks": ["10.4"] },
     { "id": 20, "tasks": ["10.5"] },
     { "id": 21, "tasks": ["11"] },
-    { "id": 22, "tasks": ["12.1", "12.3", "12.5", "12.7"] },
-    { "id": 23, "tasks": ["12.2", "12.4", "12.6", "12.8", "13.1"] },
-    { "id": 24, "tasks": ["13.2", "13.3", "14"] }
+    { "id": 22, "tasks": ["12.1"] },
+    { "id": 23, "tasks": ["12.2", "12.4", "12.7", "12.9"] },
+    { "id": 24, "tasks": ["12.3", "12.5", "12.8", "12.10"] },
+    { "id": 25, "tasks": ["12.6", "13.1"] },
+    { "id": 26, "tasks": ["13.2", "13.3"] },
+    { "id": 27, "tasks": ["14"] }
   ]
 }
 ```
