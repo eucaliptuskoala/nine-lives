@@ -79,7 +79,7 @@ This document specifies the functional requirements for the complete implementat
 
 #### Acceptance Criteria
 
-1. WHEN breed and color data are available, THE Digitization_Pipeline SHALL call the Claude Haiku API to generate character stats
+1. WHEN breed and color data are available, THE Digitization_Pipeline SHALL call the Gemini API to generate character stats
 2. WHEN card generation completes, THE Digitization_Pipeline SHALL return a name, class, max HP, damage, defence, speed, max mana, 4 abilities, lore text, and an image prompt
 3. THE Digitization_Pipeline SHALL generate exactly 3 regular abilities and 1 special ability per cat
 4. WHEN generating abilities, THE Digitization_Pipeline SHALL assign mana costs between 0 and 100

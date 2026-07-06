@@ -412,8 +412,8 @@ This implementation plan covers the complete Nine Lives game. The work is split 
 
   - [ ] 12.5 Implement card generator service
     - `services/card_generator.py` — `generate_card(breed: str, colors: list[str], personality: Optional[str] = None) -> dict`
-    - Claude Haiku API, validate stats in bounds, exactly 4 abilities (1 special), retry logic
-    - When `personality` is provided, weave it into the Claude Haiku prompt so it influences the generated class, stats, abilities, and lore
+    - Gemini API (gemini-2.5-flash), validate stats in bounds, exactly 4 abilities (1 special), retry logic
+    - When `personality` is provided, weave it into the Gemini prompt so it influences the generated class, stats, abilities, and lore
     - _Requirements: 4.1–4.10, 4.11, 4.12, 31.1, 31.2_
 
   - [ ]* 12.6 Write property tests for card generation

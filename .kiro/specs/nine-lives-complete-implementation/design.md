@@ -8,7 +8,7 @@ Nine Lives is a cat digitization roguelike game where users upload cat photos th
 
 **Current State:** Design docs complete, frontend battle loop partially working with mock data, backend skeleton exists with empty service files.
 
-**Tech Stack:** React + Vite + TypeScript + Tailwind CSS v4 + shadcn/ui + 8bitcn (retro 8-bit component registry) + "Press Start 2P" pixel font + framer-motion (frontend), Python FastAPI (backend), Supabase (database + auth), HuggingFace API (breed classification), OpenCV (color extraction), Claude Haiku API (card generation), Gemini 2.5 Flash (avatar generation).
+**Tech Stack:** React + Vite + TypeScript + Tailwind CSS v4 + shadcn/ui + 8bitcn (retro 8-bit component registry) + "Press Start 2P" pixel font + framer-motion (frontend), Python FastAPI (backend), Supabase (database + auth), HuggingFace API (breed classification), OpenCV (color extraction), Gemini API (card generation), Gemini 2.5 Flash (avatar generation).
 
 **Visual direction:** The frontend adopts a retro 8-bit aesthetic. UI components use shadcn/ui conventions sourced from the [8bitcn](https://8bitcn.com) registry, and generated cat avatars follow a matching retro pixel-art style (see the UI / Design System subsection and `docs/retro-avatar-prompt.md`). This is a presentational direction only — combat, battle, data, auth, and memorial functional design are unchanged.
 
@@ -45,7 +45,7 @@ graph TB
     subgraph "External Services"
         HF[HuggingFace API]
         CV[OpenCV k-means]
-        Claude[Claude Haiku API]
+        GeminiCard[Gemini API]
         Gemini[Gemini 2.5 Flash]
     end
 
@@ -91,7 +91,7 @@ graph TB
 
     Classifier --> HF
     ColorExtractor --> CV
-    CardGenerator --> Claude
+    CardGenerator --> GeminiCard
     ImageGenerator --> Gemini
 
     HomePage --> Auth
@@ -671,7 +671,7 @@ async def extract_colors(image_bytes: bytes, n_colors: int = 3) -> list[str]
 async def generate_card(breed: str, colors: list[str], personality: Optional[str] = None) -> dict[str, Any]
 ```
 
-**Note**: When `personality` is provided it is incorporated into the Claude Haiku prompt to influence name-consistency, class, stats, abilities, and lore.
+**Note**: When `personality` is provided it is incorporated into the Gemini prompt to influence name-consistency, class, stats, abilities, and lore.
 
 **Returns**:
 
