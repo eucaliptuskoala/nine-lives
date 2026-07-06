@@ -447,8 +447,8 @@ This implementation plan covers the complete Nine Lives game. The work is split 
   - [x]* 12.10 Write integration test for avatar generation
     - prompt → `InferenceClient` call → Supabase upload → valid public URL returned (mock the client + storage)
 
-- [ ] 13. Wire the real pipeline into `/api/digitize`
-  - [ ] 13.1 Implement the digitize orchestrator and replace random stat generation
+- [x] 13. Wire the real pipeline into `/api/digitize`
+  - [x] 13.1 Implement the digitize orchestrator and replace random stat generation
     - Implement the `services/digitize.py` orchestrator and invoke it from `routers/digitize.py`
     - Call order: `classify_breed` → segment + `extract_colors` → `generate_card` → `generate_avatar` → persist the cat + update the `game_run`
     - Thread the `personality` from the digitize request through to `generate_card` so it influences the generated card
@@ -456,11 +456,11 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     - Keep the same `CatResponse` shape so the frontend requires no changes
     - _Requirements: 1.9, 2, 3, 4, 5, 6_
 
-  - [ ]* 13.2 Write property test for image file validation
+  - [x]* 13.2 Write property test for image file validation
     - **Property 1: Image File Validation**
     - **Validates: Requirements 1.1, 27.1**
 
-  - [ ]* 13.3 Write integration test for complete digitization pipeline
+  - [x]* 13.3 Write integration test for complete digitization pipeline
     - Full flow: upload → classify → segment + extract → generate card → generate avatar → persist → verify DB records (mock the ML services + Supabase)
 
 - [ ] 14. Final checkpoint — Track B complete
