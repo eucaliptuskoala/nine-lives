@@ -19,9 +19,22 @@ vi.mock("../hooks/useSupabase", () => ({
 // --- Data API: mocked so no network happens ---
 vi.mock("../api/data");
 
+import type { User } from "@supabase/supabase-js";
+
 import { useAuth } from "../hooks/useSupabase";
 import { getActiveGameRun } from "../api/data";
 import HomePage from "./HomePage";
+
+function mockUser(overrides: Partial<User> = {}): User {
+  return {
+    id: "user-1",
+    app_metadata: {},
+    user_metadata: {},
+    aud: "",
+    created_at: "",
+    ...overrides,
+  };
+}
 
 const useAuthMock = vi.mocked(useAuth);
 const getActiveGameRunMock = vi.mocked(getActiveGameRun);
@@ -58,7 +71,7 @@ describe("HomePage", () => {
 
   it("shows New Game and Memorial (but not Continue) when logged in with no active run", async () => {
     useAuthMock.mockReturnValue({
-      user: { id: "user-1" },
+      user: mockUser(),
       session: null,
       loading: false,
     });
@@ -80,7 +93,7 @@ describe("HomePage", () => {
 
   it("offers Continue routing to the active battle when a run exists", async () => {
     useAuthMock.mockReturnValue({
-      user: { id: "user-1" },
+      user: mockUser(),
       session: null,
       loading: false,
     });
