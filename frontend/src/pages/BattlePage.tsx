@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate, useParams } from "react-router-dom";
-import { Phase } from "../types/game";
+import { Class, Phase } from "../types/game";
 import { useGameState } from "../hooks/useGameState";
 import { useAudio } from "../hooks/useAudio";
 import BattleArena from "../components/BattleArena";
@@ -48,6 +48,25 @@ function BattlePage() {
   } = useGameState();
   const { playMoveSound } = useAudio();
 
+  const handleAttack = useCallback(() => {
+    playMoveSound("attack");
+    submitAction("attack");
+  }, [playMoveSound, submitAction]);
+
+  const handleDefend = useCallback(() => {
+    playMoveSound("defend");
+    submitAction("defend");
+  }, [playMoveSound, submitAction]);
+
+  const handleAbility = useCallback(
+    (abilityId: string) => {
+      const ability = cat?.abilities.find((a) => a.id === abilityId);
+      playMoveSound(ability?.is_special ? "ultimate" : "ability");
+      submitAction("ability", abilityId);
+    },
+    [cat, playMoveSound, submitAction],
+  );
+
   // Victory popup: when the backend advances to a new round (enemy defeated),
   // show a dismissible popup. Dismissing it routes the player to the Overworld.
   // This is a pure frontend navigation gate — no combat logic is involved.
@@ -80,14 +99,6 @@ function BattlePage() {
     setVictoryRound(null);
     navigate("/overworld");
   };
-
-  // The backend is the source of truth for game-over; navigate to the memorial
-  // once it reports the run has ended.
-  useEffect(() => {
-    if (gameOver) {
-      navigate("/memorial");
-    }
-  }, [gameOver, navigate]);
 
   // Session expired mid-battle (401): the hook has already persisted the run to
   // session storage. Redirect to login, passing the battle path so LoginPage's
@@ -178,7 +189,7 @@ function BattlePage() {
       }}
       enemy={{
         name: gameState.enemy.name,
-        classType: "STRENGTH",
+        classType: Class.STRENGTH,
         hp: gameState.enemy.hp,
         maxHp: gameState.enemy.max_hp,
         mana: gameState.enemy.mana,
@@ -254,19 +265,9 @@ function BattlePage() {
         abilities={cat.abilities}
         cooldowns={gameState.player_ability_cooldowns}
         mana={gameState.player_mana}
-        onAttack={() => {
-          playMoveSound("attack");
-          submitAction("attack");
-        }}
-        onDefend={() => {
-          playMoveSound("defend");
-          submitAction("defend");
-        }}
-        onUseAbility={(abilityId) => {
-          const ability = cat.abilities.find((a) => a.id === abilityId);
-          playMoveSound(ability?.is_special ? "ultimate" : "ability");
-          submitAction("ability", abilityId);
-        }}
+        onAttack={handleAttack}
+        onDefend={handleDefend}
+        onUseAbility={handleAbility}
         disabled={!canAct}
       />
     </BattleArena>

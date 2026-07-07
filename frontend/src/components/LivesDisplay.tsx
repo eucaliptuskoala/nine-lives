@@ -8,7 +8,7 @@ const TOTAL_LIVES = 9;
 
 function LivesDisplay({ lives }: LivesDisplayProps) {
   return (
-    <div className="flex gap-0.5">
+    <div className="flex gap-0.5" role="img" aria-label={`Lives remaining: ${lives} of ${TOTAL_LIVES}`}>
       {Array.from({ length: TOTAL_LIVES }).map((_, i) => (
         <motion.span
           key={i}

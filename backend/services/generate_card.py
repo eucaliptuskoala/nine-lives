@@ -215,7 +215,8 @@ def generate_card(
     prompt = build_prompt(cat_name, breed, colors, personality)
 
     response = httpx.post(
-        f"{GEMINI_URL}?key={GEMINI_API_KEY}",
+        GEMINI_URL,
+        headers={"x-goog-api-key": GEMINI_API_KEY},
         json={
             "contents": [{"parts": [{"text": prompt}]}],
             "generationConfig": {

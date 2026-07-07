@@ -135,7 +135,7 @@ def extract_colors(image_bytes: bytes, n_colors: int = 5) -> list[dict]:
             clusters = min(n_colors, len(unique_pixels))
             clusters = max(1, clusters)
 
-            kmeans = KMeans(n_clusters=clusters, n_init=10)
+            kmeans = KMeans(n_clusters=clusters, n_init=10, random_state=42)
             labels = kmeans.fit_predict(rgb_pixels)
 
             counts = np.bincount(labels, minlength=clusters)
@@ -143,4 +143,6 @@ def extract_colors(image_bytes: bytes, n_colors: int = 5) -> list[dict]:
         except Exception as exc:  # noqa: BLE001 — retry then re-raise
             last_exc = exc
 
-    raise last_exc  # type: ignore[misc]
+    if last_exc is None:
+        raise RuntimeError("Unexpected: no retry attempt made")
+    raise last_exc

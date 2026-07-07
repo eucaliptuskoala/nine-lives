@@ -129,5 +129,8 @@ def apply_ability_effect(
         )
     elif ability.type == AbilityType.SHIELD:
         new_state.player_shield = new_state.player_shield + ability.dmg
+    else:
+        msg = f"Unimplemented ability type: {ability.type}"
+        raise ValueError(msg)
 
     return new_state

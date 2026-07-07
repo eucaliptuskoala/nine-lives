@@ -165,19 +165,21 @@ describe("BattlePage", () => {
   });
 
   it("renders the revival notification when a life was restored", () => {
-    const { container } = renderPage({ revival: true });
-    expect(container.textContent).toContain("has been revived");
-    expect(container.textContent).toContain(baseCat.name);
+    renderPage({ revival: true });
+    expect(screen.getByText(/has been revived/i)).toBeInTheDocument();
+    expect(screen.getByText(baseCat.name)).toBeInTheDocument();
   });
 
-  it("navigates to the memorial when the run is over", () => {
+  it("shows a farewell screen and navigates to memorial on button click", () => {
     renderPage({ gameOver: true });
+    expect(screen.getByText(/crossed the rainbow bridge/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Visit Memorial"));
     expect(navigateMock).toHaveBeenCalledWith("/memorial");
   });
 
   it("shows the error message but keeps actions usable when an action fails", () => {
-    const { container } = renderPage({ error: "Network error, try again." });
-    expect(container.textContent).toContain("Network error, try again.");
+    renderPage({ error: "Network error, try again." });
+    expect(screen.getByText("Network error, try again.")).toBeInTheDocument();
     // gameState/cat are still present, so the player can retry the action.
     expect(screen.getByRole("button", { name: /attack/i })).toBeEnabled();
     expect(screen.getByRole("button", { name: /defend/i })).toBeEnabled();

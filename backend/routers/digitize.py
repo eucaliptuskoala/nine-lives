@@ -8,12 +8,10 @@ from fastapi import APIRouter, Form, HTTPException, UploadFile, File
 from dotenv import load_dotenv
 
 from auth import CurrentUser
-from models.schemas import CatResponse
+from routers._helpers import load_game_run
 from services.digitize import (
     digitize,
     DigitizeGenerationError,
-    DigitizePersistenceError,
-    DigitizeStorageError,
 )
 from services.supabase_client import get_supabase_client
 from services.task_store import (
@@ -37,33 +35,6 @@ def is_allowed_image_filename(filename: str) -> bool:
         return False
     _, ext = os.path.splitext(filename)
     return ext.lower() in ALLOWED_EXTENSIONS
-
-
-def _load_game_run(supabase, game_run_id: str, user_id: str) -> dict:
-    """Fetch the game_run, verifying it exists and is owned by the user.
-
-    Mirrors `routers/battle.py::_load_game_run`: 404 if the run does not exist,
-    403 if it belongs to another user.
-    """
-    try:
-        result = (
-            supabase.table("game_run").select("*").eq("id", game_run_id).execute()
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to load game run: {exc}")
-
-    if not result.data:
-        raise HTTPException(status_code=404, detail="Game run not found.")
-
-    game_run = result.data[0]
-
-    if str(game_run.get("user_id")) != str(user_id):
-        raise HTTPException(
-            status_code=403,
-            detail="You do not own this game run.",
-        )
-
-    return game_run
 
 
 # ─── Per-user in-process rate limiter ────────────────────────────────────────
@@ -105,6 +76,21 @@ async def digitize_cat(
 ) -> dict:
     user_id = user.user_id
 
+    if not is_allowed_image_filename(file.filename or ""):
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file extension. Allowed: .jpg, .jpeg, .png, .webp.",
+        )
+
+    if len(cat_name.strip()) == 0:
+        raise HTTPException(status_code=400, detail="Cat name must not be empty.")
+
+    if len(cat_name) > 100:
+        raise HTTPException(
+            status_code=400,
+            detail="Cat name must be 100 characters or fewer.",
+        )
+
     content_type = file.content_type or ""
     if content_type not in ALLOWED_CONTENT_TYPES:
         raise HTTPException(
@@ -112,7 +98,15 @@ async def digitize_cat(
             detail=f"Unsupported file type '{content_type}'. Allowed: JPEG, PNG, WebP.",
         )
 
-    image_bytes = await file.read()
+    # Read in chunks, aborting early if the file exceeds MAX_FILE_SIZE (OOM
+    # prevention — a malicious client could send a multi-GB file otherwise).
+    image_bytes = b""
+    chunk_size = 256 * 1024  # 256 KB per read
+    while len(image_bytes) <= MAX_FILE_SIZE:
+        chunk = await file.read(chunk_size)
+        if not chunk:
+            break
+        image_bytes += chunk
     if len(image_bytes) > MAX_FILE_SIZE:
         size_mb = len(image_bytes) / (1024 * 1024)
         raise HTTPException(
@@ -122,7 +116,7 @@ async def digitize_cat(
 
     # Verify ownership of the game_run BEFORE any pipeline work (Req 2.1-2.4).
     supabase = get_supabase_client()
-    _load_game_run(supabase, game_run_id, user_id)
+    load_game_run(supabase, game_run_id, user_id)
 
     # Rate limit AFTER auth+ownership, BEFORE enqueueing billed pipeline work.
     check_rate_limit(user_id)

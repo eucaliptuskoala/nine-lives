@@ -18,18 +18,20 @@ Endpoints:
 Related: Requirements 1.3, 22.1, 23.1, 23.2, 23.3, 23.4, 24.1, 24.3.
 """
 
+import threading
+import time
+from collections import deque
+
 from fastapi import APIRouter, HTTPException, status
 
 from auth import CurrentUser
 from models.schemas import (
     Ability,
-    AbilityType,
     ActiveGameRunResponse,
     CatResponse,
     CatStatus,
     Class,
     CreateGameRunResponse,
-    Effect,
     GameStatus,
     UpdateNoteRequest,
 )
@@ -41,24 +43,29 @@ router = APIRouter(tags=["data"])
 MAX_NOTE_LENGTH = 500
 
 
+# ─── In-process rate limiter ──────────────────────────────────────────────────
+
+_rate_limit_lock = threading.Lock()
+_rate_limit_requests: dict[str, deque] = {}
+
+
+def check_rate_limit(
+    user_id: str, max_requests: int = 30, window_seconds: float = 60.0
+) -> None:
+    now = time.time()
+    with _rate_limit_lock:
+        timestamps = _rate_limit_requests.setdefault(user_id, deque())
+        timestamps.append(now)
+        while timestamps and timestamps[0] <= now - window_seconds:
+            timestamps.popleft()
+        if len(timestamps) > max_requests:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many requests. Please wait and try again.",
+            )
+
+
 # ─── Helpers ──────────────────────────────────────────────────────────────────
-
-
-def _db_row_to_ability(row: dict) -> Ability:
-    """Convert an `ability` table row into an `Ability` model."""
-    return Ability(
-        id=str(row["id"]),
-        creature_id=str(row["creature_id"]),
-        name=row["name"],
-        dmg=row["dmg"],
-        type=AbilityType(row["type"]),
-        effect=Effect(row["effect"]) if row.get("effect") else None,
-        cooldown=row["cooldown"],
-        mana_cost=row["mana_cost"],
-        lore=row["lore"],
-        is_special=row["is_special"],
-        description=row["description"],
-    )
 
 
 def _load_abilities(supabase, cat_id: str) -> list[dict]:
@@ -100,7 +107,7 @@ def _db_row_to_cat_response(cat_row: dict, ability_rows: list[dict]) -> CatRespo
         personal_note=cat_row.get("personal_note"),
         personality=cat_row.get("personality"),
         created_at=cat_row["created_at"],
-        abilities=[_db_row_to_ability(r) for r in ability_rows],
+        abilities=[Ability.from_db_row(r) for r in ability_rows],
     )
 
 
@@ -113,6 +120,7 @@ async def create_game_run(user: CurrentUser) -> CreateGameRunResponse:
 
     The run starts in DIGITIZING with no cat assigned and no persisted state.
     """
+    check_rate_limit(user.user_id)
     supabase = get_supabase_client()
 
     run_data = {
@@ -242,6 +250,7 @@ async def update_cat_note(
             detail=f"Personal note must be {MAX_NOTE_LENGTH} characters or fewer.",
         )
 
+    check_rate_limit(user.user_id)
     supabase = get_supabase_client()
 
     # Load the cat to verify existence and ownership.

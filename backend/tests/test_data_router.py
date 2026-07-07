@@ -23,183 +23,23 @@ import routers.data as data_router
 from auth import AuthUser, get_current_user
 from main import app
 
+from ._fakes import make_cat_row, make_ability_rows, make_game_run_row, FakeSupabase
+
 USER_ID = "user-123"
 OTHER_USER_ID = "someone-else"
 CAT_ID = "cat-1"
 
 
-# ─── Fake Supabase client ─────────────────────────────────────────────────────
-
-
-class _FakeResult:
-    def __init__(self, data):
-        self.data = data
-
-
-class _FakeQuery:
-    """Records the chained select/insert/update/eq/order calls and executes."""
-
-    def __init__(self, client, table_name):
-        self._client = client
-        self._table = table_name
-        self._op = None
-        self._payload = None
-        self._filters = {}
-        self._order = None  # (column, desc)
-
-    def select(self, *_args):
-        self._op = "select"
-        return self
-
-    def insert(self, payload):
-        self._op = "insert"
-        self._payload = payload
-        return self
-
-    def update(self, payload):
-        self._op = "update"
-        self._payload = payload
-        return self
-
-    def eq(self, column, value):
-        self._filters[column] = value
-        return self
-
-    def order(self, column, desc=False):
-        self._order = (column, desc)
-        return self
-
-    def execute(self):
-        if self._op == "insert":
-            row = dict(self._payload)
-            row.setdefault("id", f"{self._table}-{self._client.next_id()}")
-            self._client.tables.setdefault(self._table, []).append(row)
-            self._client.inserts.append(
-                {"table": self._table, "payload": dict(self._payload)}
-            )
-            return _FakeResult([row])
-
-        rows = self._client.tables.get(self._table, [])
-
-        def _matches(row):
-            return all(str(row.get(k)) == str(v) for k, v in self._filters.items())
-
-        matched = [r for r in rows if _matches(r)]
-
-        if self._order is not None:
-            column, desc = self._order
-            matched = sorted(
-                matched, key=lambda r: r.get(column) or "", reverse=desc
-            )
-
-        if self._op == "update":
-            self._client.updates.append(
-                {
-                    "table": self._table,
-                    "payload": self._payload,
-                    "filters": dict(self._filters),
-                }
-            )
-            for r in matched:
-                r.update(self._payload)
-
-        return _FakeResult(matched)
-
-
-class FakeSupabase:
-    """Minimal in-memory Supabase stand-in supporting the router's call chains."""
-
-    def __init__(self, tables):
-        self.tables = tables
-        self.updates = []  # captured update() calls
-        self.inserts = []  # captured insert() calls
-        self._id_counter = 0
-
-    def next_id(self):
-        self._id_counter += 1
-        return self._id_counter
-
-    def table(self, name):
-        return _FakeQuery(self, name)
-
-
 # ─── Row builders ─────────────────────────────────────────────────────────────
 
 
-def make_cat_row(**over):
-    """A realistic `cat` table row (DB columns: `def`, `class`)."""
-    row = {
-        "id": CAT_ID,
-        "user_id": USER_ID,
-        "name": "Sir Pounce",
-        "breed": "Tabby",
-        "class": "STRENGTH",
-        "current_hp": 0,
-        "max_hp": 120,
-        "dmg": 30,
-        "def": 10,
-        "spd": 12,
-        "mana": 90,
-        "max_mana": 90,
-        "lore": "A brave and fluffy warrior.",
-        "avatar_url": "https://example.com/cat.png",
-        "lives_remaining": 0,
-        "source_image_url": "https://example.com/source.jpg",
-        "status": "MEMORIAL",
-        "wins": 3,
-        "death_date": "2024-03-01T00:00:00Z",
-        "personal_note": None,
-        "created_at": "2024-01-01T00:00:00Z",
-    }
-    row.update(over)
-    return row
 
 
-def make_game_run_row(**over):
-    """A realistic `game_run` table row."""
-    row = {
-        "id": "run-1",
-        "user_id": USER_ID,
-        "cat_id": CAT_ID,
-        "status": "IN_PROGRESS",
-        "current_round": 2,
-        "state": None,
-        "created_at": "2024-02-01T00:00:00Z",
-        "completed_at": None,
-    }
-    row.update(over)
-    return row
 
 
-def make_ability_rows(creature_id=CAT_ID):
-    return [
-        {
-            "id": f"{creature_id}-claw",
-            "creature_id": creature_id,
-            "name": "Claw",
-            "dmg": 15,
-            "type": "DMG",
-            "effect": None,
-            "cooldown": 2,
-            "mana_cost": 20,
-            "lore": "A sharp strike.",
-            "is_special": False,
-            "description": "Rake the enemy with claws.",
-        },
-        {
-            "id": f"{creature_id}-fury",
-            "creature_id": creature_id,
-            "name": "Nine Fury",
-            "dmg": 40,
-            "type": "DMG",
-            "effect": "STUN",
-            "cooldown": 3,
-            "mana_cost": 50,
-            "lore": "The fury of nine lives.",
-            "is_special": True,
-            "description": "Unleash devastating fury.",
-        },
-    ]
+
+
+
 
 
 # ─── Fixtures / helpers ───────────────────────────────────────────────────────
@@ -221,6 +61,13 @@ def install_fake_supabase(monkeypatch, tables):
     fake = FakeSupabase(tables)
     monkeypatch.setattr(data_router, "get_supabase_client", lambda: fake)
     return fake
+
+
+@pytest.fixture(autouse=True)
+def _isolate_rate_limiter():
+    data_router._rate_limit_requests.clear()
+    yield
+    data_router._rate_limit_requests.clear()
 
 
 # ─── 401 (missing/invalid auth) — Req 24.1 ────────────────────────────────────
@@ -345,15 +192,17 @@ def test_memorial_returns_only_users_memorial_cats_with_abilities(
         id="cat-mine-old",
         name="Whiskers",
         death_date="2024-01-15T00:00:00Z",
+        status="MEMORIAL",
     )
     mine_new = make_cat_row(
         id="cat-mine-new",
         name="Mittens",
         death_date="2024-05-20T00:00:00Z",
+        status="MEMORIAL",
     )
     mine_alive = make_cat_row(id="cat-alive", name="Alive Cat", status="ALIVE")
     other_memorial = make_cat_row(
-        id="cat-other", name="Not Mine", user_id=OTHER_USER_ID
+        id="cat-other", name="Not Mine", user_id=OTHER_USER_ID, status="MEMORIAL",
     )
 
     tables = {
@@ -525,3 +374,19 @@ def test_active_game_run_only_considers_authenticated_users_runs(
     resp = client.get("/api/game-runs/active")
     assert resp.status_code == 200
     assert resp.json() == {"run_id": None, "cat": None}
+
+
+# ─── Rate limiting ──────────────────────────────────────────────────────────────
+
+
+def test_rate_limit_exceeded_returns_429(client, monkeypatch):
+    """After exhausting the per-user rate limit, subsequent requests get 429."""
+    override_auth()
+    install_fake_supabase(monkeypatch, {"game_run": []})
+
+    for _ in range(30):
+        resp = client.post("/api/game-runs")
+        assert resp.status_code == 200
+
+    resp = client.post("/api/game-runs")
+    assert resp.status_code == 429

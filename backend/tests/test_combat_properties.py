@@ -25,6 +25,7 @@ Properties covered (design.md → Correctness Properties):
 
 import math
 
+import pytest
 from hypothesis import given, strategies as st
 
 from models.schemas import (
@@ -380,3 +381,15 @@ def test_property_31_sanity_shield_minus_x_and_hp_overflow():
 
     assert new_state.enemy.shield == 0
     assert new_state.enemy.hp == 97  # 100 - (8 - 5)
+
+
+@pytest.mark.parametrize("unhandled_type", [AbilityType.STEAL, AbilityType.AOE, AbilityType.COUNTER])
+def test_unhandled_ability_types_raise_valueerror(unhandled_type):
+    """STEAL, AOE, and COUNTER are not yet implemented — must raise ValueError
+    instead of silently doing nothing (BUG-4 regression prevention)."""
+    state = make_game_state(
+        player_hp=50, player_max_hp=100, enemy_hp=100, enemy_max_hp=100,
+    )
+    ability = make_ability(unhandled_type, 20)
+    with pytest.raises(ValueError, match="Unimplemented ability type"):
+        apply_ability_effect(ability, state)

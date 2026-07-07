@@ -73,16 +73,18 @@ function BattleArena({
           >
             <div className="px-6 py-4 text-center">
               <AnimatePresence mode="wait">
-                <motion.p
-                  key={statusText}
-                  className="text-sm font-medium text-text-secondary"
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  {statusText}
-                </motion.p>
+                  <motion.p
+                    key={statusText}
+                    role="status"
+                    aria-live="polite"
+                    className="text-sm font-medium text-text-secondary"
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    {statusText}
+                  </motion.p>
               </AnimatePresence>
               {isResolving && (
                 <span className="mt-1 inline-flex gap-1" aria-hidden="true">

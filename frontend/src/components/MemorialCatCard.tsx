@@ -2,14 +2,13 @@ import { useId, useState } from "react";
 import { Button } from "@/components/ui/8bit/button";
 import { Textarea } from "@/components/ui/8bit/textarea";
 import { Card } from "@/components/ui/8bit/card";
+import { NOTE_MAX_LENGTH } from "../hooks/useMemorial";
 import type { Cat, Class } from "../types/game";
 
 interface MemorialCatCardProps {
   cat: Cat;
   onSaveNote: (catId: string, note: string) => Promise<void>;
 }
-
-const NOTE_MAX_LENGTH = 500;
 
 const classColors: Record<Class, string> = {
   STRENGTH: "text-class-strength",

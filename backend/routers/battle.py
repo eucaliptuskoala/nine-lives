@@ -26,15 +26,18 @@ Persistence:
 Related: Requirements 7, 9, 10, 11, 15, 18, 19, 20, 21, 29.
 """
 
+import threading
+import time
+from collections import deque
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
 from auth import CurrentUser
+from routers._helpers import load_game_run
 from models.schemas import (
     Ability,
-    AbilityType,
     BattleActionRequest,
     BattleActionResponse,
     BattleStateResponse,
@@ -42,7 +45,6 @@ from models.schemas import (
     CatStatus,
     Class,
     CreatureBase,
-    Effect,
     GameState,
     GameStatus,
     Phase,
@@ -69,28 +71,33 @@ class BattleStartRequest(BaseModel):
     run_id: str
 
 
+# ─── In-process rate limiter ──────────────────────────────────────────────────
+
+_rate_limit_lock = threading.Lock()
+_rate_limit_requests: dict[str, deque] = {}
+
+
+def check_rate_limit(
+    user_id: str, max_requests: int = 20, window_seconds: float = 60.0
+) -> None:
+    now = time.time()
+    with _rate_limit_lock:
+        timestamps = _rate_limit_requests.setdefault(user_id, deque())
+        timestamps.append(now)
+        while timestamps and timestamps[0] <= now - window_seconds:
+            timestamps.popleft()
+        if len(timestamps) > max_requests:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many battle requests. Please wait and try again.",
+            )
+
+
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def _db_row_to_ability(row: dict) -> Ability:
-    """Convert an `ability` table row into an `Ability` model."""
-    return Ability(
-        id=str(row["id"]),
-        creature_id=str(row["creature_id"]),
-        name=row["name"],
-        dmg=row["dmg"],
-        type=AbilityType(row["type"]),
-        effect=Effect(row["effect"]) if row.get("effect") else None,
-        cooldown=row["cooldown"],
-        mana_cost=row["mana_cost"],
-        lore=row["lore"],
-        is_special=row["is_special"],
-        description=row["description"],
-    )
 
 
 def _build_creature(cat_row: dict, ability_rows: list[dict]) -> CreatureBase:
@@ -112,7 +119,7 @@ def _build_creature(cat_row: dict, ability_rows: list[dict]) -> CreatureBase:
         lore=cat_row["lore"],
         avatar_url=cat_row["avatar_url"],
         lives_remaining=cat_row["lives_remaining"],
-        abilities=[_db_row_to_ability(r) for r in ability_rows],
+        abilities=[Ability.from_db_row(r) for r in ability_rows],
     )
 
 
@@ -146,33 +153,8 @@ def _cat_response_from_rows(cat_row: dict, ability_rows: list[dict]) -> CatRespo
         personal_note=cat_row.get("personal_note"),
         personality=cat_row.get("personality"),
         created_at=cat_row["created_at"],
-        abilities=[_db_row_to_ability(r) for r in ability_rows],
+        abilities=[Ability.from_db_row(r) for r in ability_rows],
     )
-
-
-def _load_game_run(supabase, run_id: str, user_id: str) -> dict:
-    """Fetch the game_run, verifying it exists and is owned by the user.
-
-    Raises 404 if the run does not exist, 403 if it belongs to another user
-    (Requirement 21.3/21.4), and 500 on unexpected DB failures (Requirement 20.4).
-    """
-    try:
-        result = supabase.table("game_run").select("*").eq("id", run_id).execute()
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to load game run: {exc}")
-
-    if not result.data:
-        raise HTTPException(status_code=404, detail="Game run not found.")
-
-    game_run = result.data[0]
-
-    if str(game_run.get("user_id")) != str(user_id):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not own this game run.",
-        )
-
-    return game_run
 
 
 def _load_cat_with_abilities(supabase, cat_id: str) -> tuple[dict, list[dict]]:
@@ -252,9 +234,12 @@ async def start_battle(body: BattleStartRequest, user: CurrentUser) -> BattleSta
     supabase = get_supabase_client()
 
     # 1. Auth (dependency) + ownership (Req 21.3/21.4).
-    game_run = _load_game_run(supabase, body.run_id, user.user_id)
+    game_run = load_game_run(supabase, body.run_id, user.user_id)
 
-    # 2. Idempotency: return the existing state if already initialized (Req 7.10).
+    # 2. Rate limit AFTER auth+ownership, BEFORE generating enemies (Req 28.5).
+    check_rate_limit(user.user_id)
+
+    # 3. Idempotency: return the existing state if already initialized (Req 7.10).
     #    Still load the cat so the response includes the player Cat (Req 7.11/7.12).
     existing_state = game_run.get("state")
     if existing_state:
@@ -336,9 +321,12 @@ async def submit_action(
     supabase = get_supabase_client()
 
     # 1. Auth (dependency) + ownership (Req 21.3/21.4).
-    game_run = _load_game_run(supabase, body.run_id, user.user_id)
+    game_run = load_game_run(supabase, body.run_id, user.user_id)
 
-    # 2. Reject actions on a completed run (Req 20.5).
+    # 2. Rate limit AFTER auth+ownership, BEFORE resolving actions (Req 28.5).
+    check_rate_limit(user.user_id)
+
+    # 3. Reject actions on a completed run (Req 20.5).
     if game_run.get("status") == GameStatus.COMPLETED.value:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

@@ -15,6 +15,9 @@ Related: Requirements 2.1, 2.2, 2.3
 """
 
 import io
+import logging
+
+logger = logging.getLogger(__name__)
 
 MODEL_NAME = "dima806/cat_breed_image_detection"
 DEFAULT_BREED = "Domestic Shorthair"
@@ -56,4 +59,5 @@ def classify_breed(image_bytes: bytes) -> str:
         # transformers returns a list sorted by score descending.
         return predictions[0]["label"]
     except Exception:
+        logger.exception("Breed classification failed — falling back to default breed")
         return DEFAULT_BREED

@@ -39,11 +39,9 @@ from services.generate_card import generate_card
 from services.generate_avatar import generate_avatar
 from models.schemas import (
     Ability,
-    AbilityType,
     CatResponse,
     CatStatus,
     Class,
-    Effect,
 )
 
 BUCKET_NAME = "cat-images"
@@ -74,23 +72,6 @@ class DigitizePersistenceError(DigitizeError):
 def _content_type_to_ext(content_type: str) -> str:
     """Map an allowed image content type to its file extension."""
     return {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}[content_type]
-
-
-def _db_row_to_ability(row: dict) -> Ability:
-    """Convert an `ability` table row into an `Ability` model."""
-    return Ability(
-        id=str(row["id"]),
-        creature_id=str(row["creature_id"]),
-        name=row["name"],
-        dmg=row["dmg"],
-        type=AbilityType(row["type"]),
-        effect=Effect(row["effect"]) if row.get("effect") else None,
-        cooldown=row["cooldown"],
-        mana_cost=row["mana_cost"],
-        lore=row["lore"],
-        is_special=row["is_special"],
-        description=row["description"],
-    )
 
 
 # ─── Orchestrator ─────────────────────────────────────────────────────────────
@@ -238,7 +219,7 @@ def digitize(
         raise DigitizePersistenceError(f"Failed to update game run: {exc}") from exc
 
     # ── 9. Build and return CatResponse ──────────────────────────────────────
-    abilities = [_db_row_to_ability(row) for row in abilities_result.data]
+    abilities = [Ability.from_db_row(row) for row in abilities_result.data]
 
     return CatResponse(
         id=cat_id,

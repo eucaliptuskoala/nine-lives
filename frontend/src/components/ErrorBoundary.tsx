@@ -1,5 +1,6 @@
 import { Component } from "react";
 import type { ErrorInfo, ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/8bit/button";
 
 interface ErrorBoundaryProps {
@@ -66,12 +67,12 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
           >
             Reload
           </Button>
-          <a
-            href="/"
+          <Link
+            to="/"
             className="rounded-none border-4 border-foreground px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-panel focus:outline-none focus:ring-2 focus:ring-accent"
           >
             Go home
-          </a>
+          </Link>
         </div>
       </div>
     );

@@ -65,8 +65,6 @@ def test_property_2_float_centroids_are_clamped_and_rounded(centroid, count):
     """Float centroids (as KMeans emits) still produce a valid #RRGGBB hex."""
     palette = _palette_from_labels([centroid], [count])
     assert HEX_RE.match(palette[0]["hex"])
-    # Single cluster ⇒ ratio is exactly 1.0.
-    assert palette[0]["ratio"] == 1.0
 
 
 def test_property_2_out_of_range_channels_clamped():

@@ -73,7 +73,11 @@ function CatCard({
             flip ? "flex-row-reverse" : ""
           }`}
         >
-          <div className="w-20 h-20 rounded-full bg-elevated flex items-center justify-center text-3xl shrink-0 border-2 border-border-ui">
+          <div
+            className="w-20 h-20 rounded-full bg-elevated flex items-center justify-center text-3xl shrink-0 border-2 border-border-ui"
+            role="img"
+            aria-label="Cat avatar"
+          >
             {"\uD83D\uDC31"}
           </div>
           <div className="flex-1 min-w-0">

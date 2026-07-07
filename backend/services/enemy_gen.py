@@ -104,10 +104,10 @@ def _pick_abilities() -> list[EnemyAbility]:
     pool = list(ABILITY_POOL)
     random.shuffle(pool)
 
-    special = next(a for a in pool if a.is_special)
+    specials = [a for a in pool if a.is_special]
     regulars = [a for a in pool if not a.is_special][:3]
 
-    return [a.model_copy() for a in (regulars + [special])]
+    return [a.model_copy() for a in (regulars + specials[:1])]
 
 
 # ─── Enemy construction ───────────────────────────────────────────────────────

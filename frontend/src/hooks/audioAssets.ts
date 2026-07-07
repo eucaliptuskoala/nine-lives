@@ -20,7 +20,7 @@ const ambientModules = import.meta.glob("../assets/ambient/*.{wav,mp3,ogg}", {
 
 /** Stable, alphabetically-ordered list of ambient track URLs. */
 export const AMBIENT_TRACKS: string[] = Object.keys(ambientModules)
-  .sort()
+  .sort((a, b) => a.localeCompare(b))
   .map((key) => ambientModules[key] as string);
 
 const soundModules = import.meta.glob("../assets/sounds/*.{wav,mp3,ogg}", {

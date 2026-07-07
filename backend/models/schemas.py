@@ -1,6 +1,6 @@
 from enum import Enum
 from pydantic import BaseModel, Field
-from typing import Literal, Optional
+from typing import Literal
 from datetime import datetime
 
 
@@ -53,12 +53,28 @@ class Ability(BaseModel):
     name: str
     dmg: int
     type: AbilityType
-    effect: Optional[Effect] = None
+    effect: Effect | None = None
     cooldown: int
     mana_cost: int
     lore: str
     is_special: bool
     description: str
+
+    @classmethod
+    def from_db_row(cls, row: dict) -> "Ability":
+        return cls(
+            id=str(row["id"]),
+            creature_id=str(row["creature_id"]),
+            name=row["name"],
+            dmg=row["dmg"],
+            type=AbilityType(row["type"]),
+            effect=Effect(row["effect"]) if row.get("effect") else None,
+            cooldown=row["cooldown"],
+            mana_cost=row["mana_cost"],
+            lore=row["lore"],
+            is_special=row["is_special"],
+            description=row["description"],
+        )
 
 
 class EnemyAbility(BaseModel):
@@ -66,7 +82,7 @@ class EnemyAbility(BaseModel):
     name: str
     dmg: int
     type: AbilityType
-    effect: Optional[Effect] = None
+    effect: Effect | None = None
     mana_cost: int
     cooldown: int
     is_special: bool
@@ -101,7 +117,7 @@ class GameState(BaseModel):
     phase: Phase
     current_round: int
     enemy: Enemy
-    events: Optional[list[str]] = None
+    events: list[str] | None = None
 
 
 class CreatureBase(BaseModel):
@@ -127,19 +143,19 @@ class CatResponse(CreatureBase):
     source_image_url: str
     status: CatStatus
     wins: int
-    death_date: Optional[datetime] = None
-    personal_note: Optional[str] = None
-    personality: Optional[str] = None
+    death_date: datetime | None = None
+    personal_note: str | None = None
+    personality: str | None = None
     created_at: datetime
 
 
 class GameRunResponse(BaseModel):
     id: str
-    cat_id: Optional[str] = None
+    cat_id: str | None = None
     status: GameStatus
     current_round: int
     created_at: datetime
-    completed_at: Optional[datetime] = None
+    completed_at: datetime | None = None
 
 
 # ─── Battle API Request/Response Models ──────────────────────────────────────
@@ -150,7 +166,7 @@ class BattleActionRequest(BaseModel):
 
     run_id: str
     action: Literal["attack", "defend", "ability"]
-    ability_id: Optional[str] = None
+    ability_id: str | None = None
 
 
 class BattleActionResponse(BaseModel):
@@ -194,8 +210,8 @@ class ActiveGameRunResponse(BaseModel):
     linked cat is still ALIVE, or `run_id=None`/`cat=None` when there is none.
     """
 
-    run_id: Optional[str] = None
-    cat: Optional[CatResponse] = None
+    run_id: str | None = None
+    cat: CatResponse | None = None
 
 
 class UpdateNoteRequest(BaseModel):

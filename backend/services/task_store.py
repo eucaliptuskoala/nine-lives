@@ -39,7 +39,7 @@ def get_task(task_id: str) -> Optional[DigitizeTask]:
         return _tasks.get(task_id)
 
 
-def update_task(task_id: str, **kwargs):
+def update_task(task_id: str, **kwargs) -> None:
     with _lock:
         task = _tasks.get(task_id)
         if task:

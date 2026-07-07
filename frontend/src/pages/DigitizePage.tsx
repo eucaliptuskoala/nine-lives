@@ -41,7 +41,7 @@ function DigitizePage() {
   const [runId, setRunId] = useState<string | null>(null);
 
   const trimmedName = catName.trim();
-  const nameTooLong = catName.length > MAX_NAME_LENGTH;
+  const nameTooLong = trimmedName.length > MAX_NAME_LENGTH;
   const personalityTooLong = personality.length > MAX_PERSONALITY_LENGTH;
 
   const canSubmit = useMemo(

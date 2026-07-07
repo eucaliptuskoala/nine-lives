@@ -3,7 +3,7 @@ import type { Cat } from "../types/game";
 import { getMemorialCats, updateCatNote } from "../api/data";
 import { ApiError } from "../api/authFetch";
 
-const NOTE_MAX_LENGTH = 500;
+export const NOTE_MAX_LENGTH = 500;
 
 export interface UseMemorialReturn {
   cats: Cat[];

@@ -221,8 +221,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
       // other off. Fire-and-forget; swallow autoplay rejections.
       const el = new Audio(url);
       el.volume = volumeRef.current;
-      const p = el.play();
-      if (p && typeof p.then === "function") p.catch(() => {});
+      el.play()?.catch(() => {});
     } catch {
       /* ignore — never block combat flow */
     }

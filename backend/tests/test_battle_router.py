@@ -32,148 +32,23 @@ from models.schemas import (
     Phase,
 )
 
+from ._fakes import make_cat_row, make_ability_rows, make_game_run_row, FakeSupabase
+
 USER_ID = "user-123"
 RUN_ID = "run-1"
 CAT_ID = "cat-1"
 
 
-# ─── Fake Supabase client ─────────────────────────────────────────────────────
-
-
-class _FakeResult:
-    def __init__(self, data):
-        self.data = data
-
-
-class _FakeQuery:
-    """Records the chained select/update/eq calls and executes against memory."""
-
-    def __init__(self, client, table_name):
-        self._client = client
-        self._table = table_name
-        self._op = None
-        self._payload = None
-        self._filters = {}
-
-    def select(self, *_args):
-        self._op = "select"
-        return self
-
-    def update(self, payload):
-        self._op = "update"
-        self._payload = payload
-        return self
-
-    def eq(self, column, value):
-        self._filters[column] = value
-        return self
-
-    def execute(self):
-        rows = self._client.tables.get(self._table, [])
-
-        def _matches(row):
-            return all(str(row.get(k)) == str(v) for k, v in self._filters.items())
-
-        matched = [r for r in rows if _matches(r)]
-
-        if self._op == "update":
-            self._client.updates.append(
-                {
-                    "table": self._table,
-                    "payload": self._payload,
-                    "filters": dict(self._filters),
-                }
-            )
-            for r in matched:
-                r.update(self._payload)
-
-        return _FakeResult(matched)
-
-
-class FakeSupabase:
-    """Minimal in-memory Supabase stand-in supporting the router's call chains."""
-
-    def __init__(self, tables):
-        self.tables = tables
-        self.updates = []  # captured update() calls for persistence assertions
-
-    def table(self, name):
-        return _FakeQuery(self, name)
-
-
 # ─── Row / state builders ─────────────────────────────────────────────────────
 
 
-def make_cat_row(**over):
-    row = {
-        "id": CAT_ID,
-        "user_id": USER_ID,
-        "name": "Sir Pounce",
-        "breed": "Tabby",
-        "class": "STRENGTH",
-        "current_hp": 100,
-        "max_hp": 120,
-        "dmg": 30,
-        "def": 10,
-        "spd": 12,
-        "mana": 90,
-        "max_mana": 90,
-        "lore": "A brave and fluffy warrior.",
-        "avatar_url": "https://example.com/cat.png",
-        "lives_remaining": 9,
-        "wins": 3,
-        "status": "ALIVE",
-        "source_image_url": "https://example.com/cat-source.png",
-        "death_date": None,
-        "personal_note": None,
-        "created_at": "2024-01-01T00:00:00Z",
-    }
-    row.update(over)
-    return row
 
 
-def make_ability_rows():
-    return [
-        {
-            "id": "claw",
-            "creature_id": CAT_ID,
-            "name": "Claw",
-            "dmg": 15,
-            "type": "DMG",
-            "effect": None,
-            "cooldown": 2,
-            "mana_cost": 20,
-            "lore": "A sharp strike.",
-            "is_special": False,
-            "description": "Rake the enemy with claws.",
-        },
-        {
-            "id": "ultimate",
-            "creature_id": CAT_ID,
-            "name": "Nine Fury",
-            "dmg": 40,
-            "type": "DMG",
-            "effect": None,
-            "cooldown": 3,
-            "mana_cost": 50,
-            "lore": "The fury of nine lives.",
-            "is_special": True,
-            "description": "Unleash devastating fury.",
-        },
-    ]
 
 
-def make_game_run_row(*, state=None, status="IN_PROGRESS", user_id=USER_ID):
-    return {
-        "id": RUN_ID,
-        "user_id": user_id,
-        "cat_id": CAT_ID,
-        "status": status,
-        "state": state,
-        "current_round": 1 if state else 0,
-        "completed_at": None,
-        "created_at": "2024-01-01T00:00:00Z",
-    }
+
+
+
 
 
 def build_state_dict(*, player_mana=90, phase="PLAYER_TURN", enemy_hp=200):
@@ -256,6 +131,13 @@ def install_fake_supabase(monkeypatch, tables):
     return fake
 
 
+@pytest.fixture(autouse=True)
+def _isolate_rate_limiter():
+    battle_router._rate_limit_requests.clear()
+    yield
+    battle_router._rate_limit_requests.clear()
+
+
 # ─── POST /api/battle/start ───────────────────────────────────────────────────
 
 
@@ -281,8 +163,8 @@ def test_start_builds_correct_initial_state(client, monkeypatch):
     assert gs["phase"] == "PLAYER_TURN"
 
     # Special ability cooldown pre-set to its max; regular starts at 0 (Req 8.9).
-    assert gs["player_ability_cooldowns"]["ultimate"] == 3
-    assert gs["player_ability_cooldowns"]["claw"] == 0
+    assert gs["player_ability_cooldowns"]["cat-1-ultimate"] == 3
+    assert gs["player_ability_cooldowns"]["cat-1-claw"] == 0
 
     # An enemy is present with its special on cooldown, regulars at 0.
     enemy = gs["enemy"]
@@ -307,7 +189,7 @@ def test_start_builds_correct_initial_state(client, monkeypatch):
     assert cat["name"] == "Sir Pounce"
     assert cat["class_"] == "STRENGTH"
     assert cat["source_image_url"] == "https://example.com/cat-source.png"
-    assert {a["id"] for a in cat["abilities"]} == {"claw", "ultimate"}
+    assert {a["id"] for a in cat["abilities"]} == {"cat-1-claw", "cat-1-ultimate"}
 
     # The Cat is NOT persisted into game_run.state (Req 7.12).
     assert "cat" not in run_updates[0]["payload"]["state"]
@@ -337,7 +219,7 @@ def test_start_is_idempotent(client, monkeypatch):
     cat = resp.json()["cat"]
     assert cat["id"] == CAT_ID
     assert cat["name"] == "Sir Pounce"
-    assert {a["id"] for a in cat["abilities"]} == {"claw", "ultimate"}
+    assert {a["id"] for a in cat["abilities"]} == {"cat-1-claw", "cat-1-ultimate"}
 
 
 # ─── POST /api/battle/action ──────────────────────────────────────────────────
@@ -367,7 +249,7 @@ def test_action_attack_damages_enemy_and_persists(client, monkeypatch):
     cat = body["cat"]
     assert cat["id"] == CAT_ID
     assert cat["name"] == "Sir Pounce"
-    assert {a["id"] for a in cat["abilities"]} == {"claw", "ultimate"}
+    assert {a["id"] for a in cat["abilities"]} == {"cat-1-claw", "cat-1-ultimate"}
 
     # State persisted via a game_run update (transient events excluded).
     run_updates = [u for u in fake.updates if u["table"] == "game_run"]
@@ -490,3 +372,27 @@ def test_action_wrong_phase_returns_400(client, monkeypatch):
     )
     assert resp.status_code == 400
     assert fake.updates == []
+
+
+# ─── Rate limiting ──────────────────────────────────────────────────────────────
+
+
+def test_rate_limit_exceeded_returns_429(client, monkeypatch):
+    """After exhausting the per-user rate limit, subsequent requests get 429."""
+    override_auth()
+    tables = {
+        "game_run": [make_game_run_row(state=build_state_dict(), status="IN_PROGRESS")],
+        "cat": [make_cat_row()],
+        "ability": make_ability_rows(),
+    }
+    install_fake_supabase(monkeypatch, tables)
+
+    # Exhaust the limit (20 req/60 s) with start requests — fast enough to stay
+    # inside the window; each hits load_game_run first so they don't blow up on
+    # the existing state.
+    for _ in range(20):
+        resp = client.post("/api/battle/start", json={"run_id": RUN_ID})
+        assert resp.status_code == 200
+
+    resp = client.post("/api/battle/start", json={"run_id": RUN_ID})
+    assert resp.status_code == 429

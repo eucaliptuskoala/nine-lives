@@ -13,6 +13,7 @@ the header is missing/malformed or the token is invalid/expired.
 Related: Requirements 21.1, 21.2
 """
 
+import logging
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
@@ -20,6 +21,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 from services.supabase_client import get_supabase_client
+
+logger = logging.getLogger(__name__)
 
 # HTTPBearer extracts the `Authorization: Bearer <token>` header and documents the
 # scheme in OpenAPI. auto_error=False lets us return 401 (rather than 403) when the
@@ -68,7 +71,7 @@ async def get_current_user(
     try:
         user_response = supabase.auth.get_user(token)
     except Exception:
-        # supabase-py raises AuthApiError (or similar) for invalid/expired tokens.
+        logger.exception("Supabase auth.get_user failed — treating as unauthorized")
         raise _UNAUTHORIZED
 
     user = getattr(user_response, "user", None)
