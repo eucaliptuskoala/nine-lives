@@ -601,6 +601,35 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     - Ensure `npm run build` + `npx vitest run` stay green; tests query by role/label/text (not color), so these changes should be safe
     - _Requirements: 27.1, 27.2_
 
+---
+## Track A — Enemy sprite wiring (additive polish)
+---
+
+- [ ] 17. Wire generated enemy sprites into battle
+  - Frontend-only, presentational. 9 of the 10 enemy sprites (`ENEMY_NAMES` in `backend/services/enemy_gen.py`) have been generated and saved at `frontend/src/assets/enemies/<name-lowercase>.jpeg` (luna, midnight, misty, oreo, shadow, simba, smokey, tiger, whiskers); `felix.jpeg` is currently missing and must be handled gracefully via fallback. The backend's `avatar_url` (a hardcoded placekitten placeholder) is intentionally NOT used for this — the frontend resolves the sprite by matching `enemy.name` against the bundled asset filenames. No backend changes.
+
+  - [ ] 17.1 Enemy sprite asset resolution
+    - Create `frontend/src/utils/enemySprites.ts` that resolves all files under `frontend/src/assets/enemies/*.{jpeg,jpg,png,webp}` via `import.meta.glob(..., { eager: true, query: '?url', import: 'default' })` (same pattern as `frontend/src/hooks/audioAssets.ts`), building a lookup keyed by the lowercased base filename (e.g. "shadow", "luna")
+    - Export `getEnemySpriteUrl(name: string): string | undefined` that looks up the sprite by `name.toLowerCase()`; return `undefined` when no matching file exists (e.g. for "Felix", currently missing) so callers can gracefully fall back — do NOT throw or warn loudly, since new enemy names may be added to `ENEMY_NAMES` before art exists for them
+    - _Requirements: 27.1, 27.2_
+
+  - [ ] 17.2 Render avatars in CatCard with fallback
+    - Update `frontend/src/components/CatCard.tsx` to use its existing (currently unused) `avatarUrl` prop: when set, render an `<img src={avatarUrl} className="w-full h-full object-cover" alt="... avatar">` inside the existing `w-20 h-20 rounded-full ... overflow-hidden` wrapper (matching `MemorialCatCard.tsx`'s existing conditional-avatar pattern); when unset/undefined, keep the current 🐱 emoji fallback exactly as today
+    - Purely presentational — do not change `CatCard`'s other props, behavior, or accessible roles/names that existing tests rely on
+    - _Requirements: 27.1, 27.2_
+
+  - [ ] 17.3 Thread enemy (and player) avatar through BattleArena → CatCard
+    - Add an optional `avatarUrl?: string` field to both the `player` and `enemy` prop shapes in `frontend/src/components/BattleArena.tsx`, and pass it through to the respective `CatCard` instances
+    - In `frontend/src/pages/BattlePage.tsx`, resolve the enemy's sprite via `getEnemySpriteUrl(gameState.enemy.name)` (from 17.1) and pass it as `enemy.avatarUrl` into `BattleArena` — the backend's `enemy.avatar_url` (currently the placekitten placeholder) is NOT used for this; the frontend does its own name-based lookup. Leave `player.avatarUrl` wiring to the cat's own `avatar_url` if readily available on the `cat` object in scope; otherwise it's acceptable to leave the player side unset for this task
+    - When `getEnemySpriteUrl` returns `undefined` (e.g. "Felix" until its art is generated), `CatCard` naturally falls back to the 🐱 emoji per 17.2 — no special-case handling needed at the call site
+    - _Requirements: 27.1, 27.2_
+
+  - [ ]* 17.4 Write frontend tests for enemy sprite wiring (Vitest)
+    - Verify `getEnemySpriteUrl` returns a resolved URL for a known bundled name (e.g. "shadow") and `undefined` for an unbundled name (e.g. "felix")
+    - Verify `CatCard` renders an `<img>` with the given `avatarUrl` when provided, and renders the emoji fallback when `avatarUrl` is omitted
+    - Verify `BattlePage` (or `BattleArena`) passes the resolved enemy sprite through when the enemy's name matches a bundled sprite
+    - _Requirements: 27.1, 27.2_
+
 ## Notes
 
 - Tasks marked `*` are optional and can be skipped for faster MVP
@@ -649,7 +678,11 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     { "id": 31, "tasks": ["16.1"] },
     { "id": 32, "tasks": ["16.2", "16.4", "16.5"] },
     { "id": 33, "tasks": ["16.3"] },
-    { "id": 34, "tasks": ["16.6"] }
+    { "id": 34, "tasks": ["16.6"] },
+    { "id": 35, "tasks": ["17.1"] },
+    { "id": 36, "tasks": ["17.2"] },
+    { "id": 37, "tasks": ["17.3"] },
+    { "id": 38, "tasks": ["17.4"] }
   ]
 }
 ```

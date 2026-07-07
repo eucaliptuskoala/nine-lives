@@ -26,9 +26,14 @@ Pipeline failures are surfaced as typed exceptions (`DigitizeStorageError`,
 storage/DB, 502 for generation) while keeping the orchestrator I/O-framework
 agnostic.
 
+TIMING INSTRUMENTATION: Each major step logs elapsed time to stdout for debugging
+and optimization. Timing data is not persisted; it's useful for profiling during
+development and troubleshooting slow digitizations.
+
 Related: Requirements 1.9, 2, 3, 4, 5, 6
 """
 
+import logging
 import time
 from typing import Optional
 
@@ -46,23 +51,30 @@ from models.schemas import (
 
 BUCKET_NAME = "cat-images"
 
+# Setup logger for timing instrumentation
+logger = logging.getLogger(__name__)
+
+
+# ─── Timing utilities ─────────────────────────────────────────────────────────
+
+
+def _log_step(step_name: str, elapsed_sec: float) -> None:
+    """Log a pipeline step with its elapsed time."""
+    logger.info(f"[DIGITIZE TIMING] {step_name}: {elapsed_sec:.2f}s")
+
 
 # ─── Typed pipeline exceptions ────────────────────────────────────────────────
 
 
-class DigitizeError(Exception):
-    """Base class for digitization pipeline failures."""
-
-
-class DigitizeStorageError(DigitizeError):
+class DigitizeStorageError(Exception):
     """Raised when uploading the source image to storage fails (→ HTTP 500)."""
 
 
-class DigitizeGenerationError(DigitizeError):
+class DigitizeGenerationError(Exception):
     """Raised when card or avatar generation fails (→ HTTP 502)."""
 
 
-class DigitizePersistenceError(DigitizeError):
+class DigitizePersistenceError(Exception):
     """Raised when persisting the cat/abilities/game_run fails (→ HTTP 500)."""
 
 
@@ -104,8 +116,11 @@ def digitize(
         DigitizePersistenceError: persisting the cat / abilities / game_run failed.
     """
     supabase = get_supabase_client()
+    pipeline_start = time.perf_counter()
+    logger.info(f"[DIGITIZE] Starting pipeline for cat '{cat_name}', run_id={game_run_id}, user_id={user_id}")
 
     # ── 1. Upload source image to Supabase Storage ───────────────────────────
+    step_start = time.perf_counter()
     ext = _content_type_to_ext(content_type)
     timestamp = int(time.time() * 1000)
     storage_path = f"{user_id}/source-{timestamp}.{ext}"
@@ -124,16 +139,32 @@ def digitize(
             storage_path
         )
     except Exception as exc:
+        logger.error(f"[DIGITIZE] Image upload failed: {exc}", exc_info=True)
         raise DigitizeStorageError(f"Image upload failed: {exc}") from exc
 
+    _log_step("1. Image Upload", time.perf_counter() - step_start)
+
     # ── 2. Breed classification (real, local ViT) ────────────────────────────
-    breed = classify_breed(image_bytes)
+    step_start = time.perf_counter()
+    try:
+        breed = classify_breed(image_bytes)
+    except Exception as exc:
+        logger.error(f"[DIGITIZE] Breed classification failed: {exc}", exc_info=True)
+        raise
+    _log_step("2. Breed Classification", time.perf_counter() - step_start)
 
     # ── 3. Colour extraction (real, YOLO + KMeans) ───────────────────────────
     # colors is a list[dict] of {"hex": str, "ratio": float}.
-    colors = extract_colors(image_bytes)
+    step_start = time.perf_counter()
+    try:
+        colors = extract_colors(image_bytes)
+    except Exception as exc:
+        logger.error(f"[DIGITIZE] Color extraction failed: {exc}", exc_info=True)
+        raise
+    _log_step("3. Color Extraction", time.perf_counter() - step_start)
 
     # ── 4. Generate card stats via Gemini ────────────────────────────────────
+    step_start = time.perf_counter()
     try:
         card = generate_card(
             cat_name=cat_name,
@@ -142,15 +173,23 @@ def digitize(
             personality=personality,
         )
     except Exception as exc:
+        logger.error(f"[DIGITIZE] Card generation failed: {exc}", exc_info=True)
         raise DigitizeGenerationError(f"Card generation failed: {exc}") from exc
 
+    _log_step("4. Card Generation (Gemini)", time.perf_counter() - step_start)
+
     # ── 5. Generate avatar via FLUX.1-schnell (returns a public storage URL) ──
+    step_start = time.perf_counter()
     try:
         avatar_url = generate_avatar(card["image_prompt"])
     except Exception as exc:
+        logger.error(f"[DIGITIZE] Avatar generation failed: {exc}", exc_info=True)
         raise DigitizeGenerationError(f"Avatar generation failed: {exc}") from exc
 
+    _log_step("5. Avatar Generation (FLUX)", time.perf_counter() - step_start)
+
     # ── 6. Insert cat record ─────────────────────────────────────────────────
+    step_start = time.perf_counter()
     cat_data = {
         "user_id": user_id,
         "name": card["name"],
@@ -175,17 +214,22 @@ def digitize(
     try:
         cat_result = supabase.table("cat").insert(cat_data).execute()
     except Exception as exc:
+        logger.error(f"[DIGITIZE] Cat insert failed: {exc}", exc_info=True)
         raise DigitizePersistenceError(
             f"Failed to create cat record: {exc}"
         ) from exc
 
     if not cat_result.data:
+        logger.error("[DIGITIZE] Cat insert returned no data")
         raise DigitizePersistenceError("Cat insert returned no data.")
 
     cat_row = cat_result.data[0]
     cat_id = str(cat_row["id"])
 
+    _log_step("6. Cat Record Insert", time.perf_counter() - step_start)
+
     # ── 7. Insert abilities ──────────────────────────────────────────────────
+    step_start = time.perf_counter()
     abilities_data = [
         {
             "creature_id": cat_id,
@@ -205,21 +249,33 @@ def digitize(
     try:
         abilities_result = supabase.table("ability").insert(abilities_data).execute()
     except Exception as exc:
+        logger.error(f"[DIGITIZE] Abilities insert failed: {exc}", exc_info=True)
         raise DigitizePersistenceError(f"Failed to create abilities: {exc}") from exc
 
     if not abilities_result.data:
+        logger.error("[DIGITIZE] Abilities insert returned no data")
         raise DigitizePersistenceError("Abilities insert returned no data.")
 
+    _log_step("7. Abilities Insert", time.perf_counter() - step_start)
+
     # ── 8. Update game_run record ────────────────────────────────────────────
+    step_start = time.perf_counter()
     try:
         supabase.table("game_run").update(
             {"cat_id": cat_id, "status": "IN_PROGRESS"}
         ).eq("id", game_run_id).execute()
     except Exception as exc:
+        logger.error(f"[DIGITIZE] Game run update failed: {exc}", exc_info=True)
         raise DigitizePersistenceError(f"Failed to update game run: {exc}") from exc
+
+    _log_step("8. Game Run Update", time.perf_counter() - step_start)
 
     # ── 9. Build and return CatResponse ──────────────────────────────────────
     abilities = [Ability.from_db_row(row) for row in abilities_result.data]
+
+    total_elapsed = time.perf_counter() - pipeline_start
+    _log_step("TOTAL PIPELINE", total_elapsed)
+    logger.info(f"[DIGITIZE] Digitization completed successfully for cat '{cat_row['name']}' (ID: {cat_id})")
 
     return CatResponse(
         id=cat_id,

@@ -39,3 +39,6 @@ frontend/dist/
 
 # --- Backend ---
 backend/.env
+
+# --- Python packaging artifacts ---
+*.egg-info/

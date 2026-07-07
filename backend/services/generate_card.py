@@ -1,17 +1,12 @@
 """
 Card Generator — Gemini-powered cat card stat generation.
 
-Calls Gemini 2.5 Flash (via the httpx REST API) with the breed, extracted fur
-colors (each with a dominance ratio), and optional personality to produce
-bounded stats, a class, lore, exactly 4 abilities (exactly 1 special), and an
-image_prompt.
+Calls Gemini 2.5 Flash with the breed, extracted fur colors (each with a
+dominance ratio), and optional personality to produce bounded stats, a class,
+lore, exactly 4 abilities (exactly 1 special), and an image_prompt.
 
 Colors are provided as a list of {"hex": str, "ratio": float} dicts (the output
 of services/extract_colors.py) so the prompt can convey each color's dominance.
-
-Note: `google-genai` is listed as an optional alternative client in the `ml`
-extra, but this module intentionally uses the lightweight httpx REST call so the
-card generator has no hard dependency on the heavy ML packages.
 
 Related: Requirements 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 4.9, 4.10, 31.1, 31.2
 """
@@ -20,18 +15,34 @@ import json
 import os
 import re
 
-import httpx
 from dotenv import load_dotenv
+from google import genai
+from google.genai import types
 
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL = "gemini-2.5-flash"
-GEMINI_URL = (
-    f"https://generativelanguage.googleapis.com/v1beta/models"
-    f"/{GEMINI_MODEL}:generateContent"
-)
-REQUEST_TIMEOUT = 45
+REQUEST_TIMEOUT_S = 45
+
+# Gemini occasionally returns a response that is cut short (a truncated
+# string value followed by malformed JSON) and can also return transient
+# 503/429 errors under load or quota pressure. Retry a bounded number of
+# times before giving up, mirroring the retry pattern in
+# services/extract_colors.py.
+MAX_RETRIES = 3
+
+# Module-level singleton cache for the Gemini client, mirroring the pattern in
+# services/generate_avatar.py. Kept as a small, separately monkeypatchable
+# function so tests can mock the client with no network access.
+_client: genai.Client | None = None
+
+
+def _get_client() -> genai.Client:
+    global _client
+    if _client is None:
+        _client = genai.Client(api_key=GEMINI_API_KEY)
+    return _client
 
 # Length caps for user-supplied prompt inputs, aligned with the existing
 # DB/form limits used elsewhere in the app (e.g. cat name / note limits).
@@ -115,7 +126,7 @@ Return ONLY valid JSON with these exact fields:
 - "lore": string (1-2 sentences of flavour text)
 - "image_prompt": string (a concise subject description for an image generation model — cat breed, colors, class, mood — NO art style instructions, just the subject)
 - "abilities": array of exactly 4 objects, exactly 1 with is_special: true
-  each: {{"name": str, "dmg": int, "type": "DMG" | "HEAL" | "SHIELD" | "STEAL" | "AOE" | "COUNTER" | "TRUE_DMG", "effect": null | "STUN" | "SILENCE" | "BLEED" | "BURN" | "BLIND" | "SLOW" | "TAUNT" | "REGEN", "cooldown": int (0-5), "mana_cost": int (0-100), "lore": str, "is_special": bool, "description": str}}"""
+  each: {{"name": str, "dmg": int, "type": "DMG" | "HEAL" | "SHIELD" | "TRUE_DMG", "effect": null | "STUN" | "SILENCE" | "BLEED" | "BURN" | "BLIND" | "SLOW" | "TAUNT" | "REGEN", "cooldown": int (0-5), "mana_cost": int (0-100), "lore": str, "is_special": bool, "description": str}}"""
 
 
 def validate_card(card: dict) -> list[str]:
@@ -140,7 +151,11 @@ def validate_card(card: dict) -> list[str]:
         if len(specials) != 1:
             errors.append(f"Expected 1 special ability, got {len(specials)}")
 
-    valid_types = {"DMG", "HEAL", "SHIELD", "STEAL", "AOE", "COUNTER", "TRUE_DMG"}
+    # STEAL, AOE, and COUNTER are part of the AbilityType schema but have no
+    # implemented combat behavior in services/combat.py::apply_ability_effect
+    # (it raises ValueError for them) — excluded here so generated cards never
+    # get an ability that crashes battle/action when used.
+    valid_types = {"DMG", "HEAL", "SHIELD", "TRUE_DMG"}
     valid_effects = {None, "STUN", "SILENCE", "BLEED", "BURN", "BLIND", "SLOW", "TAUNT", "REGEN"}
 
     for a in abilities:
@@ -213,28 +228,30 @@ def generate_card(
         raise ValueError("GEMINI_API_KEY is not set")
 
     prompt = build_prompt(cat_name, breed, colors, personality)
+    client = _get_client()
 
-    response = httpx.post(
-        GEMINI_URL,
-        headers={"x-goog-api-key": GEMINI_API_KEY},
-        json={
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {
-                "response_mime_type": "application/json",
-                "temperature": 0.7,
-            },
-        },
-        timeout=REQUEST_TIMEOUT,
-    )
-    response.raise_for_status()
-    data = response.json()
+    last_exc: Exception | None = None
+    for _attempt in range(MAX_RETRIES):
+        try:
+            response = client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.7,
+                    http_options=types.HttpOptions(timeout=REQUEST_TIMEOUT_S * 1000),
+                ),
+            )
+            card = json.loads(response.text)
+            card = sanitize_card(card)
 
-    text = data["candidates"][0]["content"]["parts"][0]["text"]
-    card = json.loads(text)
-    card = sanitize_card(card)
+            errors = validate_card(card)
+            if errors:
+                raise ValueError(f"Card validation failed: {errors}")
 
-    errors = validate_card(card)
-    if errors:
-        raise ValueError(f"Card validation failed: {errors}")
+            return card
+        except Exception as exc:  # noqa: BLE001 — retry then re-raise
+            last_exc = exc
 
-    return card
+    assert last_exc is not None
+    raise last_exc

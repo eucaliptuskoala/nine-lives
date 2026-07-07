@@ -5,10 +5,17 @@ import CatCard from "./CatCard";
 import LivesDisplay from "./LivesDisplay";
 import { Card } from "@/components/ui/8bit/card";
 import type { Class } from "../types/game";
+import type {
+  AbilityInfoFields,
+  EnemyAbilityListEntry,
+  EnemyStatFields,
+  PlayerStatFields,
+} from "@/lib/battleInfo";
 
 interface BattleArenaProps {
   player: {
     name: string;
+    avatarUrl?: string;
     classType: Class;
     hp: number;
     maxHp: number;
@@ -17,9 +24,14 @@ interface BattleArenaProps {
     isDefending?: boolean;
     shield?: number;
     lives: number;
+    /** Requirement 3.1: enables the player avatar's Stat_Info_Panel trigger when provided. */
+    statPanel?: PlayerStatFields;
+    /** Overrides the player Stat_Info_Panel's title; defaults to `name`. */
+    statPanelTitle?: string;
   };
   enemy: {
     name: string;
+    avatarUrl?: string;
     classType: Class;
     hp: number;
     maxHp: number;
@@ -27,6 +39,16 @@ interface BattleArenaProps {
     maxMana: number;
     isDefending?: boolean;
     shield?: number;
+    /** Requirement 5.1: enables the enemy avatar's Stat_Info_Panel trigger when provided. */
+    statPanel?: EnemyStatFields;
+    /** Overrides the enemy Stat_Info_Panel's title; defaults to `name`. */
+    statPanelTitle?: string;
+    /** Requirement 4.1: enables the Enemy_Ability_List when provided. */
+    abilityList?: EnemyAbilityListEntry[];
+    /** Requirement 4.3: keyed by ability id, sourced via `getEnemyAbilityInfoFields`. */
+    abilityFieldsById?: Record<string, AbilityInfoFields>;
+    /** Requirement 5: enables the Pinned mechanic on the enemy avatar's Stat_Info_Panel. Default false. */
+    pinnable?: boolean;
   };
   phase: Phase;
   currentRound: number;
@@ -56,6 +78,7 @@ function BattleArena({
         <div className="space-y-3">
           <CatCard
             name={enemy.name}
+            avatarUrl={enemy.avatarUrl}
             classType={enemy.classType}
             hp={enemy.hp}
             maxHp={enemy.maxHp}
@@ -63,6 +86,11 @@ function BattleArena({
             maxMana={enemy.maxMana}
             isDefending={enemy.isDefending}
             shield={enemy.shield}
+            statPanel={enemy.statPanel}
+            statPanelTitle={enemy.statPanelTitle}
+            abilityList={enemy.abilityList}
+            abilityFieldsById={enemy.abilityFieldsById}
+            pinnable={enemy.pinnable}
           />
         </div>
 
@@ -115,6 +143,7 @@ function BattleArena({
           </div>
           <CatCard
             name={player.name}
+            avatarUrl={player.avatarUrl}
             classType={player.classType}
             hp={player.hp}
             maxHp={player.maxHp}
@@ -122,6 +151,8 @@ function BattleArena({
             maxMana={player.maxMana}
             isDefending={player.isDefending}
             shield={player.shield}
+            statPanel={player.statPanel}
+            statPanelTitle={player.statPanelTitle}
             flip
           />
         </div>

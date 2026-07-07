@@ -4,8 +4,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
-from models.schemas import CatResponse
-
 
 class TaskStatus(str, Enum):
     PENDING = "PENDING"
@@ -18,7 +16,7 @@ class TaskStatus(str, Enum):
 class DigitizeTask:
     id: str
     status: TaskStatus = TaskStatus.PENDING
-    result: Optional[CatResponse] = None
+    result: Optional[dict] = None
     error: Optional[str] = None
     owner_id: Optional[str] = None
 

@@ -1207,27 +1207,23 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "google-genai" },
     { name = "httpx" },
     { name = "huggingface-hub" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "opencv-python" },
     { name = "pillow" },
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
     { name = "python-multipart" },
-    { name = "supabase" },
-    { name = "uvicorn", extra = ["standard"] },
-]
-
-[package.optional-dependencies]
-ml = [
-    { name = "google-genai" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "numpy", version = "2.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "scikit-learn" },
+    { name = "supabase" },
     { name = "torch" },
     { name = "torchvision" },
     { name = "transformers" },
     { name = "ultralytics" },
+    { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.dev-dependencies]
@@ -1241,24 +1237,23 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
-    { name = "google-genai", marker = "extra == 'ml'" },
+    { name = "google-genai" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "huggingface-hub", specifier = ">=0.30" },
-    { name = "numpy", marker = "extra == 'ml'" },
+    { name = "numpy" },
     { name = "opencv-python", specifier = ">=4.10" },
     { name = "pillow", specifier = ">=11" },
     { name = "pydantic-settings", specifier = ">=2.7" },
     { name = "python-dotenv", specifier = ">=1.1" },
     { name = "python-multipart", specifier = ">=0.0.20" },
-    { name = "scikit-learn", marker = "extra == 'ml'" },
+    { name = "scikit-learn" },
     { name = "supabase", specifier = ">=2.10" },
-    { name = "torch", marker = "extra == 'ml'" },
-    { name = "torchvision", marker = "extra == 'ml'" },
-    { name = "transformers", marker = "extra == 'ml'" },
-    { name = "ultralytics", marker = "extra == 'ml'" },
+    { name = "torch" },
+    { name = "torchvision" },
+    { name = "transformers" },
+    { name = "ultralytics" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34" },
 ]
-provides-extras = ["ml"]
 
 [package.metadata.requires-dev]
 dev = [

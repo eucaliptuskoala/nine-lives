@@ -18,23 +18,6 @@ dependencies = [
     "python-dotenv>=1.1",
     "pydantic-settings>=2.7",
     "supabase>=2.10",
-]
-
-[project.optional-dependencies]
-# Heavy ML dependencies for the digitization pipeline (Track B). These are NOT
-# installed by default because they are large and can be difficult to build on the
-# current test venv. Install them only when running the real pipeline with:
-#
-#     uv sync --extra ml
-#
-# The service modules (services/classify.py, services/extract_colors.py) import
-# these lazily (inside functions) so importing the modules and running the mocked
-# test suite never requires these packages to be present.
-#
-# First-use downloads: the transformers ViT weights `dima806/cat_breed_image_detection`
-# and the YOLO segmentation weights `yolo11s-seg.pt` are fetched from their model hubs
-# on first inference — they are not vendored in the repo.
-ml = [
     "torch",
     "torchvision",
     "ultralytics",

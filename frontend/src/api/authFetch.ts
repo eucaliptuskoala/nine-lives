@@ -28,9 +28,14 @@ export class ApiError extends Error {
  * and sets the `Authorization: Bearer <token>` header on the request. This is the
  * standard way to call the Battle API and the authenticated Data API endpoints.
  *
- * Note: `POST /api/digitize` is an open mock endpoint and intentionally does NOT
- * use this helper (see `digitize.ts`).
- *
+ * Note: `POST /api/digitize` also requires a JWT (enforced server-side by
+ * `CurrentUser` in `routers/digitize.py`), but its client calls its own auth
+ * header logic in `digitize.ts` rather than this helper — that module drives a
+ * long-poll loop with different timeout/parsing semantics that don't fit
+ * `authFetch`'s fixed short timeout and JSON-only response parsing. It is NOT
+ * an open/unauthenticated endpoint.
+ */
+
 /** Default request timeout (ms) applied when the caller does not specify one. */
 export const DEFAULT_TIMEOUT_MS = 15000;
 

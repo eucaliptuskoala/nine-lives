@@ -3,8 +3,13 @@ import type { Mock } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
-import type { Ability, Cat, Enemy, GameState } from "../types/game";
+import type { Ability, Cat, Enemy, EnemyAbility, GameState } from "../types/game";
 import type { UseGameStateReturn } from "../hooks/useGameState";
+import {
+  getEnemyAbilityInfoFields,
+  getEnemyStatFields,
+  getPlayerStatFields,
+} from "@/lib/battleInfo";
 
 // --- Router: keep MemoryRouter/Routes/Route/useParams real, spy on navigate ---
 const navigateMock = vi.fn();
@@ -216,5 +221,135 @@ describe("BattlePage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /continue/i }));
     expect(navigateMock).toHaveBeenCalledWith("/overworld");
+  });
+
+  it("resolves and renders the bundled enemy sprite when the enemy's name matches one", () => {
+    // "Shadow" has a bundled sprite (frontend/src/assets/enemies/shadow.jpeg);
+    // BattlePage resolves it via getEnemySpriteUrl(gameState.enemy.name).
+    renderPage({
+      gameState: { ...baseGameState, enemy: { ...enemy, name: "Shadow" } },
+    });
+
+    const img = screen.getByRole("img", { name: /shadow avatar/i });
+    expect(img.tagName).toBe("IMG");
+    expect(img).toHaveAttribute("src");
+    expect(img.getAttribute("src")).not.toBe("");
+  });
+
+  it("falls back to the emoji avatar when the enemy's name has no bundled sprite", () => {
+    // Use an explicit unmatched name so the fallback path stays unambiguous
+    // even as more enemy sprites are generated over time. The wrapper still
+    // carries role="img" (for a11y, standing in for the fallback), but it
+    // must not be a real <img> element since there's no sprite to load.
+    const { container } = renderPage({
+      gameState: {
+        ...baseGameState,
+        enemy: { ...enemy, name: "Some Totally Unknown Enemy Name" },
+      },
+    });
+    expect(container.querySelector("img")).toBeNull();
+  });
+});
+
+// --- Integration tests: BattlePage -> BattleArena -> CatCard wiring ---
+// (Task 13.3 — Requirements 3.4, 3.5, 4.1, 4.2, 5.1, 5.8, 5.9)
+//
+// There is no dedicated BattleArena.test.tsx, so these verify the wiring
+// through the BattlePage's rendered output: props that only take effect when
+// they flow correctly through BattleArena into the player/enemy CatCard
+// instances (statPanel, abilityList/abilityFieldsById, pinnable).
+describe("BattlePage wiring into BattleArena/CatCard (statPanel, abilityList, pinnable)", () => {
+  const swipeAbility: EnemyAbility = {
+    id: "ea-1",
+    name: "Swipe",
+    dmg: 6,
+    type: "DMG",
+    effect: null,
+    mana_cost: 5,
+    cooldown: 1,
+    is_special: false,
+    description: "A swift claw swipe.",
+  };
+
+  const enemyWithAbility: Enemy = { ...enemy, abilities: [swipeAbility] };
+
+  it("renders the Enemy_Ability_List entry sourced from toEnemyAbilityList(gameState.enemy)", () => {
+    renderPage({ gameState: { ...baseGameState, enemy: enemyWithAbility } });
+
+    expect(screen.getByRole("button", { name: /swipe info/i })).toBeInTheDocument();
+  });
+
+  it("the enemy ability list entry's Ability_Info_Panel content matches getEnemyAbilityInfoFields(ability)", () => {
+    renderPage({ gameState: { ...baseGameState, enemy: enemyWithAbility } });
+
+    const entry = screen.getByRole("button", { name: /swipe info/i });
+    fireEvent.mouseEnter(entry);
+
+    const panel = screen.getByRole("tooltip");
+    const expectedFields = getEnemyAbilityInfoFields(swipeAbility);
+    expect(panel).toHaveTextContent(expectedFields.description);
+    expect(panel).toHaveTextContent(String(expectedFields.dmg));
+    expect(panel).toHaveTextContent(expectedFields.effect);
+  });
+
+  it("renders the enemy avatar as an interactive Stat_Info_Panel trigger with content matching getEnemyStatFields(gameState.enemy)", () => {
+    renderPage();
+
+    const enemyAvatar = screen.getByRole("button", { name: /rival stats/i });
+    fireEvent.mouseEnter(enemyAvatar);
+
+    const panel = screen.getByRole("tooltip");
+    const expected = getEnemyStatFields(enemy);
+    expect(panel).toHaveTextContent(expected.breed);
+    expect(panel).toHaveTextContent(String(expected.atk));
+    expect(panel).toHaveTextContent(String(expected.defence));
+    expect(panel).toHaveTextContent(String(expected.spd));
+    expect(panel).toHaveTextContent(String(expected.maxHp));
+    expect(panel).toHaveTextContent(String(expected.maxMana));
+  });
+
+  it("renders the player avatar as an interactive Stat_Info_Panel trigger with content matching getPlayerStatFields(cat)", () => {
+    renderPage();
+
+    const playerAvatar = screen.getByRole("button", { name: /whiskers stats/i });
+    fireEvent.mouseEnter(playerAvatar);
+
+    const panel = screen.getByRole("tooltip");
+    const expected = getPlayerStatFields(baseCat);
+    expect(panel).toHaveTextContent(String(expected.dmg));
+    expect(panel).toHaveTextContent(String(expected.defence));
+    expect(panel).toHaveTextContent(String(expected.spd));
+    expect(panel).toHaveTextContent(String(expected.maxHp));
+    expect(panel).toHaveTextContent(String(expected.maxMana));
+    expect(panel).toHaveTextContent(expected.breed);
+    expect(panel).toHaveTextContent(expected.lore);
+  });
+
+  it("the enemy avatar's Stat_Info_Panel is pinnable (BattlePage sets pinnable=true on the enemy)", () => {
+    renderPage();
+
+    const enemyAvatar = screen.getByRole("button", { name: /rival stats/i });
+    fireEvent.mouseEnter(enemyAvatar);
+    fireEvent.click(enemyAvatar);
+    fireEvent.mouseLeave(enemyAvatar);
+
+    // A close control is only ever rendered on a Pinned panel (Requirement
+    // 5.10), so its presence after the pointer moves away proves both that
+    // the panel opened and that it pinned.
+    expect(screen.getByRole("tooltip")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+  });
+
+  it("the player avatar's Stat_Info_Panel is not pinnable (BattlePage does not set pinnable on the player)", () => {
+    renderPage();
+
+    const playerAvatar = screen.getByRole("button", { name: /whiskers stats/i });
+    fireEvent.mouseEnter(playerAvatar);
+    fireEvent.click(playerAvatar);
+    fireEvent.mouseLeave(playerAvatar);
+
+    // Without pinnable, clicking while open does not pin, so the panel
+    // closes on mouse leave and no close control is ever rendered.
+    expect(screen.queryByRole("tooltip")).toBeNull();
   });
 });

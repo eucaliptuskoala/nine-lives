@@ -124,6 +124,8 @@ async def digitize_cat(
     task = create_task(owner_id=user_id)
 
     def run():
+        import logging
+        logger = logging.getLogger(__name__)
         try:
             update_task(task.id, status=TaskStatus.PROCESSING)
             cat = digitize(
@@ -134,10 +136,16 @@ async def digitize_cat(
                 user_id=user_id,
                 personality=personality,
             )
-            update_task(task.id, status=TaskStatus.COMPLETED, result=cat)
+            # Convert CatResponse to dict for JSON serialization.
+            cat_dict = cat.model_dump(mode="json")
+            update_task(task.id, status=TaskStatus.COMPLETED, result=cat_dict)
         except DigitizeGenerationError as exc:
+            logger.error(f"[DIGITIZE] Task {task.id} failed: {exc}")
             update_task(task.id, status=TaskStatus.FAILED, error=str(exc))
         except Exception as exc:
+            logger.error(
+                f"[DIGITIZE] Task {task.id} failed unexpectedly: {exc}", exc_info=True
+            )
             update_task(task.id, status=TaskStatus.FAILED, error=str(exc))
 
     thread = threading.Thread(target=run, daemon=True)
@@ -149,6 +157,7 @@ async def digitize_cat(
 @router.get("/status/{task_id}")
 async def get_digitize_status(task_id: str, user: CurrentUser) -> dict:
     task = get_task(task_id)
+
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
 

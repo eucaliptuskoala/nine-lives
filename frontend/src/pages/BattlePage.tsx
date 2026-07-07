@@ -4,6 +4,13 @@ import { useNavigate, useParams } from "react-router-dom";
 import { Class, Phase } from "../types/game";
 import { useGameState } from "../hooks/useGameState";
 import { useAudio } from "../hooks/useAudio";
+import { getEnemySpriteUrl } from "../utils/enemySprites";
+import {
+  getEnemyAbilityInfoFields,
+  getEnemyStatFields,
+  getPlayerStatFields,
+  toEnemyAbilityList,
+} from "@/lib/battleInfo";
 import BattleArena from "../components/BattleArena";
 import ActionButtons from "../components/ActionButtons";
 import FarewellScreen from "../components/FarewellScreen";
@@ -174,10 +181,21 @@ function BattlePage() {
     ? "Resolving turn..."
     : latestEvent ?? "Your turn!";
 
+  // Display-only derivations (Requirements 3.4, 3.5, 4.1, 4.2, 5.1, 5.8, 5.9):
+  // pure projections of data already present on `cat`/`gameState`, no new API
+  // calls or type changes.
+  const playerStatPanel = getPlayerStatFields(cat);
+  const enemyStatPanel = getEnemyStatFields(gameState.enemy);
+  const enemyAbilityList = toEnemyAbilityList(gameState.enemy);
+  const enemyAbilityFieldsById = Object.fromEntries(
+    gameState.enemy.abilities.map((a) => [a.id, getEnemyAbilityInfoFields(a)]),
+  );
+
   return (
     <BattleArena
       player={{
         name: cat.name,
+        avatarUrl: cat.avatar_url,
         classType: cat.class,
         hp: gameState.player_hp,
         maxHp: gameState.player_max_hp,
@@ -186,15 +204,21 @@ function BattlePage() {
         isDefending: gameState.player_is_defending,
         shield: gameState.player_shield,
         lives: gameState.lives_remaining,
+        statPanel: playerStatPanel,
       }}
       enemy={{
         name: gameState.enemy.name,
+        avatarUrl: getEnemySpriteUrl(gameState.enemy.name),
         classType: Class.STRENGTH,
         hp: gameState.enemy.hp,
         maxHp: gameState.enemy.max_hp,
         mana: gameState.enemy.mana,
         maxMana: gameState.enemy.max_mana,
         shield: gameState.enemy.shield,
+        statPanel: enemyStatPanel,
+        abilityList: enemyAbilityList,
+        abilityFieldsById: enemyAbilityFieldsById,
+        pinnable: true,
       }}
       phase={gameState.phase}
       currentRound={gameState.current_round}

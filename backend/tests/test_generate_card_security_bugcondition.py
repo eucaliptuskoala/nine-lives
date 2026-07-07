@@ -25,9 +25,10 @@ free-text is sanitized/trimmed — mirroring how
 (task 3.8). This file is kept in place (not deleted) so it stands as the
 before/after pair for this bug.
 
-Mocking style for `generate_card`/`httpx.post` mirrors
-`tests/test_generate_card.py`: a `_FakeResponse` double with `.raise_for_status()`
-and `.json()` returning the Gemini REST shape, monkeypatched onto `gc.httpx.post`.
+Mocking style for `generate_card`/the Gemini SDK mirrors
+`tests/test_generate_card.py`: a fake client double exposing
+`.models.generate_content(...)` returning an object with a `.text` attribute,
+monkeypatched onto `gc._get_client`.
 
 **Validates: Requirements 1.6, 1.7, 1.8, Design Property 2**
 """
@@ -78,19 +79,27 @@ def _valid_card(**over):
     return card
 
 
-class _FakeResponse:
+class _FakeGenAIResponse:
+    """Mimics the `google.genai` response object: a `.text` attribute holding
+    the raw (JSON) text the model returned."""
+
+    def __init__(self, card):
+        self.text = json.dumps(card)
+
+
+class _FakeModels:
     def __init__(self, card):
         self._card = card
 
-    def raise_for_status(self):
-        return None
+    def generate_content(self, **kwargs):
+        return _FakeGenAIResponse(self._card)
 
-    def json(self):
-        return {
-            "candidates": [
-                {"content": {"parts": [{"text": json.dumps(self._card)}]}}
-            ]
-        }
+
+class _FakeClient:
+    """Mimics `genai.Client`: exposes `.models.generate_content(...)`."""
+
+    def __init__(self, card):
+        self.models = _FakeModels(card)
 
 
 # ─── Test 1: fence around user text (bugfix.md 1.6) ────────────────────────
@@ -209,8 +218,8 @@ def test_generate_card_sanitizes_returned_free_text(monkeypatch):
     `generate_card` now calls `sanitize_card` after JSON parse and before
     `validate_card`, stripping control characters and length-capping
     `name`, `lore`, `image_prompt`, and each ability `name`/`description`.
-    This test mocks `httpx.post` (mirroring `tests/test_generate_card.py`) to
-    return an adversarial/oversized card and asserts the returned card has
+    This test mocks the Gemini client (mirroring `tests/test_generate_card.py`)
+    to return an adversarial/oversized card and asserts the returned card has
     been sanitized rather than persisted verbatim.
     """
     monkeypatch.setattr(gc, "GEMINI_API_KEY", "test-key")
@@ -239,10 +248,7 @@ def test_generate_card_sanitizes_returned_free_text(monkeypatch):
     # The adversarial card is otherwise numerically/structurally valid.
     assert validate_card(card) == []
 
-    def _fake_post(url, **kwargs):
-        return _FakeResponse(card)
-
-    monkeypatch.setattr(gc.httpx, "post", _fake_post)
+    monkeypatch.setattr(gc, "_get_client", lambda: _FakeClient(card))
 
     result = generate_card(
         cat_name="Sir Pounce",

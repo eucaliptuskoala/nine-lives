@@ -149,15 +149,6 @@ class CatResponse(CreatureBase):
     created_at: datetime
 
 
-class GameRunResponse(BaseModel):
-    id: str
-    cat_id: str | None = None
-    status: GameStatus
-    current_round: int
-    created_at: datetime
-    completed_at: datetime | None = None
-
-
 # ─── Battle API Request/Response Models ──────────────────────────────────────
 
 

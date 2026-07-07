@@ -1,8 +1,8 @@
 """
 Tests for `services/generate_card.py` — Gemini card generation.
 
-The Gemini REST call is fully mocked (monkeypatched `httpx.post`) so no network
-or API quota is used. Includes:
+The Gemini SDK call is fully mocked (monkeypatched `gc._get_client`) so no
+network or API quota is used. Includes:
   * a unit test of the happy path (parsed dict returned) and that `build_prompt`
     renders color ratios; and
   * property-based tests for the pure `validate_card` function.
@@ -65,19 +65,27 @@ def _valid_card(**over):
     return card
 
 
-class _FakeResponse:
+class _FakeGenAIResponse:
+    """Mimics the `google.genai` response object: a `.text` attribute holding
+    the raw (JSON) text the model returned."""
+
+    def __init__(self, card):
+        self.text = json.dumps(card)
+
+
+class _FakeModels:
     def __init__(self, card):
         self._card = card
 
-    def raise_for_status(self):
-        return None
+    def generate_content(self, **kwargs):
+        return _FakeGenAIResponse(self._card)
 
-    def json(self):
-        return {
-            "candidates": [
-                {"content": {"parts": [{"text": json.dumps(self._card)}]}}
-            ]
-        }
+
+class _FakeClient:
+    """Mimics `genai.Client`: exposes `.models.generate_content(...)`."""
+
+    def __init__(self, card):
+        self.models = _FakeModels(card)
 
 
 # ─── Unit tests (mocked Gemini) ───────────────────────────────────────────────
@@ -88,11 +96,7 @@ def test_generate_card_returns_parsed_dict(monkeypatch):
     monkeypatch.setattr(gc, "GEMINI_API_KEY", "test-key")
 
     card = _valid_card()
-
-    def _fake_post(url, **kwargs):
-        return _FakeResponse(card)
-
-    monkeypatch.setattr(gc.httpx, "post", _fake_post)
+    monkeypatch.setattr(gc, "_get_client", lambda: _FakeClient(card))
 
     result = generate_card(
         cat_name="Sir Pounce",
@@ -103,14 +107,76 @@ def test_generate_card_returns_parsed_dict(monkeypatch):
     assert result == card
 
 
+class _MalformedGenAIResponse:
+    def __init__(self, text):
+        self.text = text
+
+
+class _FlakyClient:
+    """Mimics `genai.Client` but returns malformed JSON for the first
+    `num_bad_responses` calls before succeeding, to test generate_card's retry
+    behavior on transient malformed-JSON responses from Gemini."""
+
+    def __init__(self, card, num_bad_responses):
+        self._card = card
+        self._num_bad_responses = num_bad_responses
+        self.calls = 0
+        self.models = self
+
+    def generate_content(self, **kwargs):
+        self.calls += 1
+        if self.calls <= self._num_bad_responses:
+            return _MalformedGenAIResponse('{"name": "Sir Pounce", "abilities": [')
+        return _FakeGenAIResponse(self._card)
+
+
+def test_generate_card_retries_on_malformed_json(monkeypatch):
+    """generate_card retries after a malformed/truncated JSON response and
+    succeeds once Gemini returns valid JSON within MAX_RETRIES attempts."""
+    monkeypatch.setattr(gc, "GEMINI_API_KEY", "test-key")
+
+    card = _valid_card()
+    flaky_client = _FlakyClient(card, num_bad_responses=gc.MAX_RETRIES - 1)
+    monkeypatch.setattr(gc, "_get_client", lambda: flaky_client)
+
+    result = generate_card(
+        cat_name="Sir Pounce",
+        breed="Tabby",
+        colors=[{"hex": "#C0A080", "ratio": 0.6}],
+    )
+    assert result == card
+    assert flaky_client.calls == gc.MAX_RETRIES
+
+
+def test_generate_card_raises_after_exhausting_retries_on_malformed_json(monkeypatch):
+    """generate_card gives up and raises after MAX_RETRIES consecutive
+    malformed JSON responses."""
+    monkeypatch.setattr(gc, "GEMINI_API_KEY", "test-key")
+
+    card = _valid_card()
+    flaky_client = _FlakyClient(card, num_bad_responses=gc.MAX_RETRIES)
+    monkeypatch.setattr(gc, "_get_client", lambda: flaky_client)
+
+    try:
+        generate_card(
+            cat_name="Sir Pounce",
+            breed="Tabby",
+            colors=[{"hex": "#C0A080", "ratio": 0.6}],
+        )
+        assert False, "expected an exception after exhausting retries"
+    except json.JSONDecodeError:
+        pass
+    assert flaky_client.calls == gc.MAX_RETRIES
+
+
 def test_generate_card_raises_without_api_key(monkeypatch):
     """No GEMINI_API_KEY -> ValueError before any network call."""
     monkeypatch.setattr(gc, "GEMINI_API_KEY", None)
 
-    def _should_not_be_called(*a, **k):  # pragma: no cover
-        raise AssertionError("httpx.post should not be called without an API key")
+    def _should_not_be_called():  # pragma: no cover
+        raise AssertionError("_get_client should not be called without an API key")
 
-    monkeypatch.setattr(gc.httpx, "post", _should_not_be_called)
+    monkeypatch.setattr(gc, "_get_client", _should_not_be_called)
 
     try:
         generate_card("Sir Pounce", "Tabby", [{"hex": "#FFFFFF", "ratio": 1.0}])
@@ -356,10 +422,7 @@ def test_generate_card_end_to_end_sanitizes_before_validate(monkeypatch):
         ],
     )
 
-    def _fake_post(url, **kwargs):
-        return _FakeResponse(polluted_card)
-
-    monkeypatch.setattr(gc.httpx, "post", _fake_post)
+    monkeypatch.setattr(gc, "_get_client", lambda: _FakeClient(polluted_card))
 
     result = generate_card(
         cat_name="Sir Pounce",
