@@ -11,7 +11,11 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.34",
     "python-multipart>=0.0.20",
-    "opencv-python>=4.10",
+    # opencv-python-headless (not opencv-python): the code only uses basic
+    # array ops (cvtColor, drawContours) with no GUI/display needs, and the
+    # full opencv-python bundles Qt/GUI libraries that roughly triple the
+    # installed size for no benefit in a headless serverless function.
+    "opencv-python-headless>=4.10",
     "httpx>=0.28",
     "huggingface-hub>=0.30",
     "Pillow>=11",
@@ -38,6 +42,22 @@ dev = [
 [tool.setuptools.packages.find]
 include = ["models*", "routers*", "services*"]
 exclude = ["tests*"]
+
+# Deploy targets (e.g. Vercel serverless functions) are CPU-only and have a
+# hard bundle-size limit (500 MB). The default PyPI `torch`/`torchvision`
+# wheels for Linux bundle full NVIDIA CUDA runtime packages (nvidia-cublas,
+# nvidia-cudnn, cuda-toolkit, etc. — several GB combined) that are never used
+# since inference here always runs on CPU. Point uv at the official CPU-only
+# wheel index for these two packages so `uv.lock`/installs never pull the
+# GPU-enabled build. See https://docs.astral.sh/uv/guides/integration/pytorch/
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu" }]
+torchvision = [{ index = "pytorch-cpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
