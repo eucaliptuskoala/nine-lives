@@ -4,21 +4,23 @@ Upload a photo of your cat — it gets digitized into a playable roguelike chara
 
 Built for [#HackTheKitty](https://coding.kitty) (June 24 – July 7, 2026).
 
+**Play the deployed game:** [nine-lives-rose.vercel.app](https://nine-lives-rose.vercel.app)
+
 ## Tech Stack
 
-| Layer | Tech |
-|-------|------|
-| Frontend | React + Vite + TypeScript + Tailwind CSS v3 + framer-motion |
-| Backend | Python FastAPI |
-| Database + Auth | Supabase |
-| Breed classification | HuggingFace Inference API |
-| Fur color extraction | OpenCV k-means |
-| Name / stats / lore | Claude Haiku (Anthropic) |
-| Avatar generation | Gemini 2.5 Flash Image |
+| Layer                 | Tech                                                         |
+| --------------------- | ------------------------------------------------------------ |
+| Frontend              | React + Vite + TypeScript + Tailwind CSS v3 + framer-motion  |
+| Backend               | Python FastAPI                                               |
+| Database + Auth       | Supabase                                                     |
+| Breed classification  | HuggingFace Inference API                                    |
+| Fur color extraction  | OpenCV k-means                                               |
+| Name / stats / lore   | Claude Haiku (Anthropic)                                     |
+| Avatar generation     | Gemini 2.5 Flash Image                                       |
 
 ## Project Structure
 
-```
+```text
 nine-lives/
 ├── frontend/          # React + Vite SPA
 ├── backend/           # FastAPI server
