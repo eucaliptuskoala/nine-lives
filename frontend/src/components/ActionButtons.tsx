@@ -1,6 +1,5 @@
 import { Button } from "@/components/ui/8bit/button";
 import type { Ability } from "../types/game";
-import { AbilityType } from "../types/game";
 
 interface ActionButtonsProps {
   abilities: Ability[];
@@ -12,15 +11,11 @@ interface ActionButtonsProps {
   disabled: boolean;
 }
 
-// Retro accent colours per ability type. These override the 8bit Button's
-// default `bg-foreground` fill while keeping its pixelated frame.
-const abilityColors: Record<string, string> = {
-  [AbilityType.DMG]: "bg-red-700 text-white",
-  [AbilityType.HEAL]: "bg-green-700 text-white",
-  [AbilityType.SHIELD]: "bg-cyan-700 text-white",
-  [AbilityType.TRUE_DMG]: "bg-purple-700 text-white",
-  [AbilityType.AOE]: "bg-orange-700 text-white",
-};
+// Battle palette (Task 16.3). A regular ability uses the Ability green; a
+// special/ultimate ability uses the Ultimate gold. These override the 8bit
+// Button's default `bg-foreground` fill while keeping its pixelated frame.
+const ABILITY_CLASS = "bg-ability hover:bg-ability-hover text-text-primary";
+const ULTIMATE_CLASS = "bg-ultimate hover:bg-ultimate-hover text-text-primary";
 
 function ActionButtons({
   abilities,
@@ -37,7 +32,7 @@ function ActionButtons({
         type="button"
         onClick={onAttack}
         disabled={disabled}
-        className="col-span-1 h-auto min-h-12 px-4 py-3 text-xs bg-gray-700 text-white"
+        className="col-span-1 h-auto min-h-12 px-4 py-3 text-xs bg-attack hover:bg-attack-hover text-text-primary"
       >
         {"\u2694\uFE0F"} Attack
       </Button>
@@ -46,7 +41,7 @@ function ActionButtons({
         type="button"
         onClick={onDefend}
         disabled={disabled}
-        className="col-span-1 h-auto min-h-12 px-4 py-3 text-xs bg-gray-700 text-white"
+        className="col-span-1 h-auto min-h-12 px-4 py-3 text-xs bg-defend hover:bg-defend-hover text-text-primary"
       >
         {"\uD83D\uDEE1\uFE0F"} Defend
       </Button>
@@ -63,13 +58,15 @@ function ActionButtons({
             onClick={() => onUseAbility(ability.id)}
             disabled={!canUse}
             className={`col-span-1 h-auto min-h-12 flex-col px-3 py-3 text-[10px] leading-tight ${
-              ability.is_special
-                ? "bg-yellow-600 text-white"
-                : abilityColors[ability.type] ?? "bg-gray-700 text-white"
+              ability.is_special ? ULTIMATE_CLASS : ABILITY_CLASS
             }`}
           >
             <span className="block leading-tight">
-              {ability.is_special ? "\u2B50" : ""}
+              {ability.is_special ? (
+                <span className="text-rarity-special">{"\u2B50"}</span>
+              ) : (
+                ""
+              )}
               {ability.name}
             </span>
             <span className="block text-[9px] opacity-75 mt-0.5">

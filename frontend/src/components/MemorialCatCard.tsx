@@ -12,9 +12,9 @@ interface MemorialCatCardProps {
 const NOTE_MAX_LENGTH = 500;
 
 const classColors: Record<Class, string> = {
-  STRENGTH: "text-red-400",
-  AGILITY: "text-green-400",
-  INTELLIGENCE: "text-blue-400",
+  STRENGTH: "text-class-strength",
+  AGILITY: "text-class-agility",
+  INTELLIGENCE: "text-class-intelligence",
 };
 
 /** Format an ISO date string into a readable date, tolerating null / invalid input. */
@@ -55,12 +55,12 @@ function MemorialCatCard({ cat, onSaveNote }: MemorialCatCardProps) {
   return (
     <Card
       font="normal"
-      className="bg-gray-800/60 border-gray-500 text-gray-200"
+      className="bg-panel/60 border-border-ui text-text-secondary"
     >
       <div className="flex flex-col gap-4 p-5">
       {/* Header: avatar + identity */}
       <div className="flex items-center gap-4">
-        <div className="w-20 h-20 rounded-full bg-gray-700 flex items-center justify-center text-3xl shrink-0 border-2 border-gray-600 overflow-hidden">
+        <div className="w-20 h-20 rounded-full bg-elevated flex items-center justify-center text-3xl shrink-0 border-2 border-border-ui overflow-hidden">
           {cat.avatar_url ? (
             <img
               src={cat.avatar_url}
@@ -74,8 +74,8 @@ function MemorialCatCard({ cat, onSaveNote }: MemorialCatCardProps) {
           )}
         </div>
         <div className="min-w-0">
-          <h2 className="text-xl font-bold text-white truncate">{cat.name}</h2>
-          <p className="text-sm text-gray-400">{cat.breed}</p>
+          <h2 className="text-xl font-bold text-text-primary truncate">{cat.name}</h2>
+          <p className="text-sm text-text-secondary">{cat.breed}</p>
           <span className={`text-xs font-medium ${classColors[cat.class]}`}>
             {cat.class}
           </span>
@@ -84,41 +84,41 @@ function MemorialCatCard({ cat, onSaveNote }: MemorialCatCardProps) {
 
       {/* Final stats */}
       <div>
-        <h3 className="text-sm font-semibold text-gray-300 mb-2">Final stats</h3>
+        <h3 className="text-sm font-semibold text-text-secondary mb-2">Final stats</h3>
         <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-sm">
           <div className="flex justify-between gap-2">
-            <dt className="text-gray-400">Max HP</dt>
-            <dd className="font-medium text-white">{cat.max_hp}</dd>
+            <dt className="text-text-secondary">Max HP</dt>
+            <dd className="font-medium text-text-primary">{cat.max_hp}</dd>
           </div>
           <div className="flex justify-between gap-2">
-            <dt className="text-gray-400">Damage</dt>
-            <dd className="font-medium text-white">{cat.dmg}</dd>
+            <dt className="text-text-secondary">Damage</dt>
+            <dd className="font-medium text-text-primary">{cat.dmg}</dd>
           </div>
           <div className="flex justify-between gap-2">
-            <dt className="text-gray-400">Defence</dt>
-            <dd className="font-medium text-white">{cat.defence}</dd>
+            <dt className="text-text-secondary">Defence</dt>
+            <dd className="font-medium text-text-primary">{cat.defence}</dd>
           </div>
           <div className="flex justify-between gap-2">
-            <dt className="text-gray-400">Speed</dt>
-            <dd className="font-medium text-white">{cat.spd}</dd>
+            <dt className="text-text-secondary">Speed</dt>
+            <dd className="font-medium text-text-primary">{cat.spd}</dd>
           </div>
           <div className="flex justify-between gap-2">
-            <dt className="text-gray-400">Max Mana</dt>
-            <dd className="font-medium text-white">{cat.max_mana}</dd>
+            <dt className="text-text-secondary">Max Mana</dt>
+            <dd className="font-medium text-text-primary">{cat.max_mana}</dd>
           </div>
         </dl>
       </div>
 
       {/* Abilities */}
       <div>
-        <h3 className="text-sm font-semibold text-gray-300 mb-2">Abilities</h3>
+        <h3 className="text-sm font-semibold text-text-secondary mb-2">Abilities</h3>
         <ul className="flex flex-col gap-1 text-sm">
           {cat.abilities.map((ability) => (
             <li key={ability.id} className="flex items-center gap-2">
-              <span className="text-white">{ability.name}</span>
-              <span className="text-xs text-gray-400">({ability.type})</span>
+              <span className="text-text-primary">{ability.name}</span>
+              <span className="text-xs text-text-secondary">({ability.type})</span>
               {ability.is_special && (
-                <span className="text-xs font-medium text-amber-400">
+                <span className="text-xs font-medium text-rarity-special">
                   {"\u2605"} Special
                 </span>
               )}
@@ -130,8 +130,8 @@ function MemorialCatCard({ cat, onSaveNote }: MemorialCatCardProps) {
       {/* Lore */}
       {cat.lore && (
         <div>
-          <h3 className="text-sm font-semibold text-gray-300 mb-1">Lore</h3>
-          <p className="text-sm text-gray-300 italic whitespace-pre-line">
+          <h3 className="text-sm font-semibold text-text-secondary mb-1">Lore</h3>
+          <p className="text-sm text-text-secondary italic whitespace-pre-line">
             {cat.lore}
           </p>
         </div>
@@ -140,32 +140,32 @@ function MemorialCatCard({ cat, onSaveNote }: MemorialCatCardProps) {
       {/* Personality (read-only, user-provided) */}
       {cat.personality && (
         <div>
-          <h3 className="text-sm font-semibold text-gray-300 mb-1">
+          <h3 className="text-sm font-semibold text-text-secondary mb-1">
             Personality
           </h3>
-          <p className="text-sm text-gray-300 whitespace-pre-line">
+          <p className="text-sm text-text-secondary whitespace-pre-line">
             {cat.personality}
           </p>
         </div>
       )}
 
       {/* Death date + wins */}
-      <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm border-t border-gray-700 pt-3">
+      <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm border-t border-border-ui pt-3">
         <div className="flex gap-2">
-          <span className="text-gray-400">Fell on</span>
-          <span className="font-medium text-white">
+          <span className="text-text-secondary">Fell on</span>
+          <span className="font-medium text-text-primary">
             {formatDeathDate(cat.death_date)}
           </span>
         </div>
         <div className="flex gap-2">
-          <span className="text-gray-400">Lifetime wins</span>
-          <span className="font-medium text-white">{cat.wins}</span>
+          <span className="text-text-secondary">Lifetime wins</span>
+          <span className="font-medium text-text-primary">{cat.wins}</span>
         </div>
       </div>
 
       {/* Personal note editor */}
-      <div className="flex flex-col gap-1 border-t border-gray-700 pt-3">
-        <label htmlFor={noteId} className="text-sm font-semibold text-gray-300">
+      <div className="flex flex-col gap-1 border-t border-border-ui pt-3">
+        <label htmlFor={noteId} className="text-sm font-semibold text-text-secondary">
           Personal note
         </label>
         <Textarea
@@ -176,11 +176,11 @@ function MemorialCatCard({ cat, onSaveNote }: MemorialCatCardProps) {
           disabled={saving}
           placeholder="Write a few words to remember them by."
           font="normal"
-          className="resize-none bg-gray-900 text-sm text-white"
+          className="resize-none bg-app text-sm text-text-primary"
         />
         <div className="flex items-center justify-between">
           <span
-            className={`text-xs ${tooLong ? "text-red-400" : "text-gray-400"}`}
+            className={`text-xs ${tooLong ? "text-hp" : "text-text-secondary"}`}
           >
             {note.length}/{NOTE_MAX_LENGTH}
           </span>
@@ -189,13 +189,13 @@ function MemorialCatCard({ cat, onSaveNote }: MemorialCatCardProps) {
             onClick={handleSave}
             disabled={!canSave}
             aria-label={`Save personal note for ${cat.name}`}
-            className="h-auto bg-indigo-600 px-4 py-1.5 text-[10px] text-white"
+            className="h-auto bg-accent hover:bg-accent/90 px-4 py-1.5 text-[10px] text-app"
           >
             {saving ? "Saving..." : "Save"}
           </Button>
         </div>
         {tooLong && (
-          <span className="text-xs text-red-400">
+          <span className="text-xs text-hp">
             Note must be {NOTE_MAX_LENGTH} characters or fewer.
           </span>
         )}

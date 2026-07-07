@@ -11,7 +11,7 @@ function FarewellScreen({ catName, onGoToMemorial }: FarewellScreenProps) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 1 }}
-      className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white px-6 text-center"
+      className="flex flex-col items-center justify-center min-h-screen bg-app text-text-primary px-6 text-center"
     >
       <motion.p
         initial={{ scale: 0.8, opacity: 0 }}
@@ -33,7 +33,7 @@ function FarewellScreen({ catName, onGoToMemorial }: FarewellScreenProps) {
         initial={{ y: 20, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ delay: 1.1, duration: 0.5 }}
-        className="text-gray-400 mb-8 max-w-sm"
+        className="text-text-secondary mb-8 max-w-sm"
       >
         All nine lives spent with courage. They will be remembered.
       </motion.p>
@@ -44,7 +44,7 @@ function FarewellScreen({ catName, onGoToMemorial }: FarewellScreenProps) {
         whileHover={{ scale: 1.03 }}
         whileTap={{ scale: 0.97 }}
         onClick={onGoToMemorial}
-        className="px-6 py-3 rounded-lg bg-gray-700 hover:bg-gray-600 font-medium transition-colors"
+        className="px-6 py-3 rounded-lg bg-btn hover:bg-btn-hover active:bg-btn-pressed text-btn-text font-medium transition-colors"
       >
         Visit Memorial
       </motion.button>

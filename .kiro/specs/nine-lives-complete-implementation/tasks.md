@@ -470,6 +470,137 @@ This implementation plan covers the complete Nine Lives game. The work is split 
   - Verify data persisted to the database correctly (cat record created + `game_run` updated with `cat_id`)
   - Ask the user if questions arise.
 
+---
+## Track A — Frontend Audio (additive polish)
+---
+
+- [x] 15. Frontend audio: ambient music + move sound effects
+  - [x] 15.1 Ambient background music player
+    - Create a `useAmbientAudio` hook (or `<AmbientAudio>` component) mounted once at the app root (`frontend/src/App.tsx`)
+    - Load all tracks via Vite `import.meta.glob('./assets/ambient/*.{wav,mp3,ogg}', { eager: true, query: '?url', import: 'default' })` so new files added to `frontend/src/assets/ambient/` are picked up with no code change (treat the set as a growable playlist)
+    - Play tracks sequentially and loop the playlist: advance on the audio `ended` event, wrap to the first track after the last, and a single track loops itself
+    - Respect browser autoplay policy: start muted/paused until the first user interaction or an explicit unmute; expose a mute/volume control and persist the mute preference in `localStorage`; use a modest default volume
+    - Use the native HTML5 Audio API — no new runtime dependency
+    - _Requirements: 27.1, 27.2_
+
+  - [x] 15.2 Per-move sound effects
+    - Create a `useSoundEffects` hook / `playSound(name)` util that preloads effects via `import.meta.glob('./assets/sounds/*.{wav,mp3,ogg}', { eager: true, query: '?url', import: 'default' })`
+    - Map PLAYER moves in `frontend/src/pages/BattlePage.tsx` action handlers: attack → `attack_sound`; defend → `block_sound`; regular ability (`ability.is_special === false`) → `ability_sound`; special/ultimate ability (`ability.is_special === true`) → `ultimate_sound` (look up `is_special` by ability id from `cat.abilities`)
+    - Fire-and-forget with overlapping plays allowed (clone the audio element per play); playback MUST NOT block or change the battle/combat flow (`submitAction` behavior is unchanged)
+    - Share a single global mute state with the ambient player (task 15.1)
+    - _Requirements: 27.1, 27.2_
+
+  - [x] 15.3 Global mute/volume control
+    - Surface a minimal mute/volume toggle (e.g. in `AppHeader` or a small floating control) consistent with the retro 8-bit theme
+    - The control governs both the ambient music (task 15.1) and the move sound effects (task 15.2) via the shared global mute/volume state
+    - _Requirements: 27.1, 27.2_
+
+  - [x]* 15.4 Frontend tests for audio (Vitest)
+    - Mock the HTML5 Audio element and `import.meta.glob`; no real audio playback
+    - Verify the ambient player advances/loops through the playlist and respects the mute state
+    - Verify each player move triggers the correct effect (attack → `attack_sound`, defend → `block_sound`, regular ability → `ability_sound`, special/ultimate → `ultimate_sound`) without altering `submitAction` behavior
+
+---
+## Track A — Theming (additive polish)
+---
+
+- [ ] 16. Switch to the new color palette
+  - Purely presentational Tailwind v4 + 8bitcn theming change. Centralize the palette below as theme tokens (CSS custom properties in the `@theme` block of `frontend/src/index.css`, plus any retro theme vars) and replace the current hardcoded Tailwind color utility classes (e.g. `bg-gray-700`, `bg-red-700`, `bg-yellow-600`, `text-white`) across components with the new tokens.
+  - Do NOT change data flow, props contracts that tests rely on, or accessible roles/names — tests query by role/label/text, not color, and the existing suite (`npm run build` + `npx vitest run`) MUST stay green.
+  - The exact palette to capture verbatim as theme tokens:
+
+    **Core / Semantic**
+
+    | Token | Name | Hex |
+    | --- | --- | --- |
+    | App background | Rich charcoal | `#1B1A22` |
+    | Panels / Cards | Dark slate | `#282734` |
+    | Elevated cards / Popups | Slate purple | `#343244` |
+    | Borders | Dusty lavender gray | `#56536A` |
+    | Primary text | Warm white | `#F3F1EA` |
+    | Secondary text | Soft gray | `#B8B5C7` |
+    | Disabled text/buttons | Muted gray | `#6F6C7E` |
+    | Primary accent (links, selected tabs, focus) | Lavender | `#8E86C9` |
+
+    **Standard UI Buttons**
+
+    | State | Hex |
+    | --- | --- |
+    | Default | `#343244` |
+    | Hover | `#403E53` |
+    | Pressed | `#282734` |
+    | Border | `#56536A` |
+    | Text | `#F3F1EA` |
+
+    **Battle Buttons (base / hover)**
+
+    | Button | Base | Hover |
+    | --- | --- | --- |
+    | Attack | `#D96C6C` | `#E57C7C` |
+    | Defend | `#6F8FBF` | `#80A0CF` |
+    | Ability | `#67B38C` | `#78C59B` |
+    | Ultimate | `#D9B15F` | `#E7C56F` |
+
+    **Resources**
+
+    | Resource | Hex |
+    | --- | --- |
+    | HP | `#D46A6A` |
+    | Mana | `#6D9ED8` |
+    | Shield | `#9FA9B8` |
+    | Lives | `#F0C97A` |
+
+    **Character Classes**
+
+    | Class | Hex |
+    | --- | --- |
+    | Strength | `#C97A62` |
+    | Agility | `#77B98A` |
+    | Intelligence | `#8B82D8` |
+
+    **Ability Rarity**
+
+    | Rarity | Hex |
+    | --- | --- |
+    | Normal | `#BDBBC9` |
+    | Special | `#D9B15F` |
+
+  - [ ] 16.1 Define the palette as theme tokens and apply the global base
+    - Add the Core / Semantic palette as `@theme` custom properties in `frontend/src/index.css` (plus any retro theme vars): backgrounds (App background `#1B1A22`), panel/card (`#282734`), elevated/popup (`#343244`), border (`#56536A`), text primary (`#F3F1EA`) / secondary (`#B8B5C7`) / disabled (`#6F6C7E`), accent (`#8E86C9`)
+    - Apply globally: base app background + primary/secondary/disabled text + borders + accent (links, focus rings, selected tabs), replacing hardcoded utility classes where they set these globally
+    - Purely presentational — no data flow, props, accessible roles/names, or behavior changes
+    - _Requirements: 27.1, 27.2_
+
+  - [ ] 16.2 Apply Standard UI Button states to shared/general buttons
+    - Apply the Standard UI Button colors to the shared 8bit `Button` usages / general buttons: Default `#343244`, Hover `#403E53`, Pressed `#282734`, Border `#56536A`, Text `#F3F1EA`
+    - Replace hardcoded classes (e.g. `bg-gray-700 text-white`) with the new tokens; keep the pixelated 8bit frame intact
+    - Purely presentational — no data flow, props, accessible roles/names, or behavior changes
+    - _Requirements: 27.1, 27.2_
+
+  - [ ] 16.3 Apply Battle Button + Ability Rarity colors in `ActionButtons.tsx`
+    - In `frontend/src/components/ActionButtons.tsx`, replace the current hardcoded `abilityColors` map and the `is_special` (ultimate) styling with the Battle Button palette (base + hover): Attack `#D96C6C` / `#E57C7C`, Defend `#6F8FBF` / `#80A0CF`, Ability `#67B38C` / `#78C59B`, Ultimate `#D9B15F` / `#E7C56F`
+    - Map ability-by-type to the Ability colors appropriately and map the special/ultimate ability (`is_special`) to the Ultimate colors
+    - Apply the Ability Rarity colors (Normal `#BDBBC9`, Special `#D9B15F`) wherever ability rarity is indicated
+    - Purely presentational — no data flow, props, accessible roles/names, or behavior changes
+    - _Requirements: 27.1, 27.2_
+
+  - [ ] 16.4 Apply Resource colors to bars/indicators
+    - Apply the Resource palette: HP (`HealthBar`) `#D46A6A`, Mana (`ManaBar`) `#6D9ED8`, Shield `#9FA9B8`, Lives (`LivesDisplay`) `#F0C97A`
+    - Replace hardcoded color classes on these bars/indicators with the new tokens
+    - Purely presentational — no data flow, props, accessible roles/names, or behavior changes
+    - _Requirements: 27.1, 27.2_
+
+  - [ ] 16.5 Apply Character Class colors wherever class is displayed
+    - Apply the Character Class palette (Strength `#C97A62`, Agility `#77B98A`, Intelligence `#8B82D8`) wherever a cat's class is displayed (e.g. `CatCard`, `MemorialCatCard`, `BattleArena`)
+    - Replace hardcoded color classes with the new tokens
+    - Purely presentational — no data flow, props, accessible roles/names, or behavior changes
+    - _Requirements: 27.1, 27.2_
+
+  - [ ]* 16.6 Update/verify color-related tests and keep the suite green
+    - Update or verify any Vitest tests that assert on specific color classes
+    - Ensure `npm run build` + `npx vitest run` stay green; tests query by role/label/text (not color), so these changes should be safe
+    - _Requirements: 27.1, 27.2_
+
 ## Notes
 
 - Tasks marked `*` are optional and can be skipped for faster MVP
@@ -511,7 +642,14 @@ This implementation plan covers the complete Nine Lives game. The work is split 
     { "id": 24, "tasks": ["12.3", "12.5", "12.8", "12.10"] },
     { "id": 25, "tasks": ["12.6", "13.1"] },
     { "id": 26, "tasks": ["13.2", "13.3"] },
-    { "id": 27, "tasks": ["14"] }
+    { "id": 27, "tasks": ["14"] },
+    { "id": 28, "tasks": ["15.1"] },
+    { "id": 29, "tasks": ["15.2", "15.3"] },
+    { "id": 30, "tasks": ["15.4"] },
+    { "id": 31, "tasks": ["16.1"] },
+    { "id": 32, "tasks": ["16.2", "16.4", "16.5"] },
+    { "id": 33, "tasks": ["16.3"] },
+    { "id": 34, "tasks": ["16.6"] }
   ]
 }
 ```

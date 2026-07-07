@@ -51,10 +51,10 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     return (
       <div
         role="alert"
-        className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white px-6 text-center gap-4"
+        className="flex flex-col items-center justify-center min-h-screen bg-app text-text-primary px-6 text-center gap-4"
       >
         <h1 className="text-2xl font-bold">Something went wrong</h1>
-        <p className="max-w-md text-gray-400">
+        <p className="max-w-md text-text-secondary">
           An unexpected error occurred. You can reload the app to try again, or
           head back home.
         </p>
@@ -62,13 +62,13 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
           <Button
             type="button"
             onClick={this.handleReload}
-            className="h-auto bg-indigo-600 px-4 py-2 text-white"
+            className="h-auto bg-accent hover:bg-accent/90 px-4 py-2 text-app"
           >
             Reload
           </Button>
           <a
             href="/"
-            className="rounded-none border-4 border-foreground px-4 py-2 text-sm font-medium text-gray-200 transition-colors hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-400"
+            className="rounded-none border-4 border-foreground px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-panel focus:outline-none focus:ring-2 focus:ring-accent"
           >
             Go home
           </a>

@@ -1,6 +1,8 @@
 import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./hooks/useSupabase";
+import { AudioProvider } from "./hooks/useAudio";
+import AudioControls from "./components/AudioControls";
 import AuthGuard from "./components/AuthGuard";
 import ErrorBoundary from "./components/ErrorBoundary";
 import DigitizePage from "./pages/DigitizePage";
@@ -16,8 +18,8 @@ const MemorialPage = lazy(() => import("./pages/MemorialPage"));
 /** Retro-themed fallback shown while a lazily-loaded route chunk downloads. */
 function RouteFallback() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-900 text-white">
-      <p role="status" className="retro text-xs text-gray-400">
+    <div className="flex min-h-screen items-center justify-center bg-app text-text-primary">
+      <p role="status" className="retro text-xs text-text-secondary">
         Loading...
       </p>
     </div>
@@ -27,8 +29,9 @@ function RouteFallback() {
 function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <Routes>
+      <AudioProvider>
+        <BrowserRouter>
+          <Routes>
           <Route
             path="/login"
             element={
@@ -87,8 +90,10 @@ function App() {
               </ErrorBoundary>
             }
           />
-        </Routes>
-      </BrowserRouter>
+          </Routes>
+          <AudioControls />
+        </BrowserRouter>
+      </AudioProvider>
     </AuthProvider>
   );
 }

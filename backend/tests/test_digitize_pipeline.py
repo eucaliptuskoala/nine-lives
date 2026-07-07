@@ -1,29 +1,10 @@
-"""
-Integration tests for the digitization pipeline (`services/digitize.py` and the
-thin `POST /api/digitize` router), with EVERYTHING external fully mocked.
-
-No network calls and no real ML models are used:
-    * `classify_breed`   -> monkeypatched to a fixed breed
-    * `extract_colors`   -> monkeypatched to a fixed palette
-    * `generate_card`    -> monkeypatched to a valid card dict
-    * `generate_avatar`  -> monkeypatched to a fake URL
-    * `get_supabase_client` -> an in-memory FakeSupabase (records inserts/updates
-      + storage uploads), mirroring the fake client in test_data_router.py
-
-These tests assert the full flow — classify → extract → card → avatar → persist —
-returns a `CatResponse` whose fields map correctly, that exactly 4 abilities are
-inserted, and that the `game_run` is updated with the new cat id + IN_PROGRESS.
-
-`POST /api/digitize` is an OPEN mock endpoint (no auth), so no auth override is
-needed.
-
-Covers Requirements 1.9, 2, 3, 4, 5, 6.
-"""
+import time
 
 import pytest
 from fastapi.testclient import TestClient
 
 import services.digitize as digitize_service
+from auth import AuthUser, get_current_user
 from services.digitize import digitize
 from main import app
 
@@ -32,17 +13,12 @@ GAME_RUN_ID = "run-1"
 CAT_NAME = "Sir Pounce"
 
 
-# ─── Fake Supabase client (in-memory, with storage) ───────────────────────────
-
-
 class _FakeResult:
     def __init__(self, data):
         self.data = data
 
 
 class _FakeStorageBucket:
-    """Records uploads and returns a deterministic public URL."""
-
     def __init__(self, client, bucket):
         self._client = client
         self._bucket = bucket
@@ -66,8 +42,6 @@ class _FakeStorage:
 
 
 class _FakeQuery:
-    """Records chained insert/update/eq calls and executes against memory."""
-
     def __init__(self, client, table_name):
         self._client = client
         self._table = table_name
@@ -78,6 +52,10 @@ class _FakeQuery:
     def insert(self, payload):
         self._op = "insert"
         self._payload = payload
+        return self
+
+    def select(self, *_args):
+        self._op = "select"
         return self
 
     def update(self, payload):
@@ -127,8 +105,6 @@ class _FakeQuery:
 
 
 class FakeSupabase:
-    """Minimal in-memory Supabase stand-in with table + storage support."""
-
     def __init__(self, tables=None):
         self.tables = tables or {}
         self.inserts = []
@@ -145,9 +121,6 @@ class FakeSupabase:
         return _FakeQuery(self, name)
 
 
-# ─── Fixtures / stubs ─────────────────────────────────────────────────────────
-
-
 FAKE_BREED = "Siamese"
 FAKE_COLORS = [
     {"hex": "#C0A080", "ratio": 0.6},
@@ -157,7 +130,6 @@ FAKE_AVATAR_URL = "https://storage.example.com/cat-images/avatars/fake.png"
 
 
 def make_card():
-    """A valid card dict as `generate_card` would return."""
     return {
         "name": CAT_NAME,
         "class": "INTELLIGENCE",
@@ -219,7 +191,6 @@ def make_card():
 
 @pytest.fixture
 def fake_supabase(monkeypatch):
-    """Install a FakeSupabase and stub all ML services on the orchestrator."""
     fake = FakeSupabase(
         tables={"game_run": [{"id": GAME_RUN_ID, "user_id": USER_ID, "status": "DIGITIZING"}]}
     )
@@ -231,14 +202,8 @@ def fake_supabase(monkeypatch):
     return fake
 
 
-# ─── Orchestrator-level integration ───────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_digitize_orchestrator_full_flow(fake_supabase):
-    """The orchestrator runs classify→extract→card→avatar→persist and maps
-    every field onto the returned CatResponse."""
-    cat = await digitize(
+def test_digitize_orchestrator_full_flow(fake_supabase):
+    cat = digitize(
         image_bytes=b"\xff\xd8\xff-fake-jpeg-bytes",
         content_type="image/jpeg",
         cat_name=CAT_NAME,
@@ -247,29 +212,26 @@ async def test_digitize_orchestrator_full_flow(fake_supabase):
         personality="curious and aloof",
     )
 
-    # ── Field mapping ────────────────────────────────────────────────────────
     assert cat.name == CAT_NAME
-    assert cat.breed == FAKE_BREED  # from the (mocked) classifier
+    assert cat.breed == FAKE_BREED
     assert cat.class_.value == "INTELLIGENCE"
     assert cat.max_hp == 120
-    assert cat.current_hp == 120  # current_hp seeded from max_hp
+    assert cat.current_hp == 120
     assert cat.dmg == 30
-    assert cat.defence == 12  # DB `def` -> `defence`
+    assert cat.defence == 12
     assert cat.spd == 18
     assert cat.mana == 90
     assert cat.max_mana == 90
     assert cat.lore == "A clever cat forged from pixels."
-    assert cat.avatar_url == FAKE_AVATAR_URL  # from generate_avatar
+    assert cat.avatar_url == FAKE_AVATAR_URL
     assert cat.lives_remaining == 9
     assert cat.status.value == "ALIVE"
     assert cat.wins == 0
-    assert cat.personality == "curious and aloof"  # persisted
+    assert cat.personality == "curious and aloof"
     assert cat.user_id == USER_ID
 
-    # source image url comes from the storage upload public URL
     assert cat.source_image_url.startswith("https://storage.example.com/cat-images/")
 
-    # ── Exactly 4 abilities, mapped from the card ────────────────────────────
     assert len(cat.abilities) == 4
     assert {a.name for a in cat.abilities} == {
         "Claw",
@@ -281,14 +243,12 @@ async def test_digitize_orchestrator_full_flow(fake_supabase):
     assert len(specials) == 1 and specials[0].name == "Nine Fury"
     assert all(a.creature_id == cat.id for a in cat.abilities)
 
-    # ── Storage upload happened once, JPEG under the user's path ─────────────
     assert len(fake_supabase.uploads) == 1
     upload = fake_supabase.uploads[0]
     assert upload["bucket"] == "cat-images"
     assert upload["path"].startswith(f"{USER_ID}/source-")
     assert upload["path"].endswith(".jpg")
 
-    # ── Persistence: one cat insert + 4 ability rows ─────────────────────────
     cat_inserts = [i for i in fake_supabase.inserts if i["table"] == "cat"]
     assert len(cat_inserts) == 1
     assert cat_inserts[0]["payload"]["personality"] == "curious and aloof"
@@ -297,7 +257,6 @@ async def test_digitize_orchestrator_full_flow(fake_supabase):
     assert len(ability_rows) == 4
     assert all(r["creature_id"] == cat.id for r in ability_rows)
 
-    # ── game_run updated with the new cat id + IN_PROGRESS ───────────────────
     run_updates = [u for u in fake_supabase.updates if u["table"] == "game_run"]
     assert len(run_updates) == 1
     assert run_updates[0]["payload"] == {"cat_id": cat.id, "status": "IN_PROGRESS"}
@@ -308,11 +267,7 @@ async def test_digitize_orchestrator_full_flow(fake_supabase):
     assert run_row["status"] == "IN_PROGRESS"
 
 
-# ─── Endpoint-level integration (TestClient) ──────────────────────────────────
-
-
 def test_digitize_endpoint_full_flow(monkeypatch):
-    """POST /api/digitize (open mock endpoint) returns a mapped CatResponse."""
     fake = FakeSupabase(
         tables={"game_run": [{"id": GAME_RUN_ID, "user_id": USER_ID, "status": "DIGITIZING"}]}
     )
@@ -322,51 +277,79 @@ def test_digitize_endpoint_full_flow(monkeypatch):
     monkeypatch.setattr(digitize_service, "generate_card", lambda **kw: make_card())
     monkeypatch.setattr(digitize_service, "generate_avatar", lambda _p: FAKE_AVATAR_URL)
 
-    with TestClient(app) as client:
-        resp = client.post(
-            "/api/digitize",
-            data={
-                "game_run_id": GAME_RUN_ID,
-                "user_id": USER_ID,
-                "cat_name": CAT_NAME,
-                "personality": "curious and aloof",
-            },
-            files={"file": ("kitty.jpg", b"\xff\xd8\xff-fake-jpeg", "image/jpeg")},
-        )
+    import routers.digitize as digitize_router
 
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["breed"] == FAKE_BREED
-    assert body["avatar_url"] == FAKE_AVATAR_URL
-    assert body["personality"] == "curious and aloof"
-    assert body["status"] == "ALIVE"
-    assert body["lives_remaining"] == 9
-    assert len(body["abilities"]) == 4
+    monkeypatch.setattr(digitize_router, "get_supabase_client", lambda: fake)
 
-    # Persisted the cat + linked the run.
-    assert body["source_image_url"].startswith("https://storage.example.com/cat-images/")
+    app.dependency_overrides[get_current_user] = lambda: AuthUser(user_id=USER_ID)
+    try:
+        with TestClient(app) as client:
+            resp = client.post(
+                "/api/digitize",
+                data={
+                    "game_run_id": GAME_RUN_ID,
+                    "cat_name": CAT_NAME,
+                    "personality": "curious and aloof",
+                },
+                files={"file": ("kitty.jpg", b"\xff\xd8\xff-fake-jpeg", "image/jpeg")},
+            )
+
+            assert resp.status_code == 202, resp.text
+            body = resp.json()
+            assert "task_id" in body
+
+            task_id = body["task_id"]
+            deadline = time.time() + 10
+
+            result = None
+            while time.time() < deadline:
+                status_resp = client.get(f"/api/digitize/status/{task_id}")
+                assert status_resp.status_code == 200
+                status_body = status_resp.json()
+
+                if status_body["status"] == "COMPLETED":
+                    result = status_body["result"]
+                    break
+                elif status_body["status"] == "FAILED":
+                    pytest.fail(f"Digitization task failed: {status_body.get('error')}")
+
+                time.sleep(0.1)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert result is not None, "Task did not complete within the deadline"
+
+    assert result["breed"] == FAKE_BREED
+    assert result["avatar_url"] == FAKE_AVATAR_URL
+    assert result["personality"] == "curious and aloof"
+    assert result["status"] == "ALIVE"
+    assert result["lives_remaining"] == 9
+    assert len(result["abilities"]) == 4
+
+    assert result["source_image_url"].startswith("https://storage.example.com/cat-images/")
     run_row = fake.tables["game_run"][0]
     assert run_row["status"] == "IN_PROGRESS"
-    assert run_row["cat_id"] == body["id"]
+    assert run_row["cat_id"] == result["id"]
 
 
 def test_digitize_endpoint_rejects_unsupported_type(monkeypatch):
-    """A disallowed content type is rejected with 400 before any pipeline call."""
-
-    def _boom():  # pragma: no cover - must not be called
+    def _boom():
         raise AssertionError("pipeline should not run for invalid file type")
 
     monkeypatch.setattr(digitize_service, "get_supabase_client", _boom)
 
-    with TestClient(app) as client:
-        resp = client.post(
-            "/api/digitize",
-            data={
-                "game_run_id": GAME_RUN_ID,
-                "user_id": USER_ID,
-                "cat_name": CAT_NAME,
-            },
-            files={"file": ("kitty.gif", b"GIF89a", "image/gif")},
-        )
+    app.dependency_overrides[get_current_user] = lambda: AuthUser(user_id=USER_ID)
+    try:
+        with TestClient(app) as client:
+            resp = client.post(
+                "/api/digitize",
+                data={
+                    "game_run_id": GAME_RUN_ID,
+                    "cat_name": CAT_NAME,
+                },
+                files={"file": ("kitty.gif", b"GIF89a", "image/gif")},
+            )
+    finally:
+        app.dependency_overrides.clear()
 
     assert resp.status_code == 400

@@ -21,7 +21,7 @@ import json
 from hypothesis import given, strategies as st
 
 import services.generate_card as gc
-from services.generate_card import build_prompt, generate_card, validate_card
+from services.generate_card import build_prompt, generate_card, sanitize_card, validate_card
 
 
 # ─── Fixtures / builders ──────────────────────────────────────────────────────
@@ -199,3 +199,190 @@ def test_property_4_wrong_special_count_is_flagged(n_specials):
     card = _valid_card(abilities=abilities)
     errors = validate_card(card)
     assert any("special" in e for e in errors)
+
+
+# ─── BUG 2 fix — untrusted-data fencing, length caps, sanitize_card ──────────
+# **Validates: Requirements 2.7, 2.8, 2.9, 3.3**
+
+
+def test_build_prompt_fences_user_text():
+    """cat_name, breed, and personality all appear strictly between the
+    <untrusted_user_data> fence markers."""
+    prompt = build_prompt(
+        "Sir Pounce",
+        "Maine Coon",
+        [{"hex": "#C0A080", "ratio": 0.6}],
+        personality="grumpy but loyal",
+    )
+
+    assert "<untrusted_user_data>" in prompt
+    assert "</untrusted_user_data>" in prompt
+
+    open_idx = prompt.index("<untrusted_user_data>")
+    close_idx = prompt.index("</untrusted_user_data>")
+    assert open_idx < close_idx
+
+    name_idx = prompt.index("Sir Pounce")
+    breed_idx = prompt.index("Maine Coon")
+    personality_idx = prompt.index("grumpy but loyal")
+
+    assert open_idx < name_idx < close_idx
+    assert open_idx < breed_idx < close_idx
+    assert open_idx < personality_idx < close_idx
+
+
+def test_build_prompt_caps_cat_name_length():
+    """A cat_name longer than CAT_NAME_MAX_LENGTH is truncated in the prompt."""
+    oversized_name = "A" * (gc.CAT_NAME_MAX_LENGTH + 500)
+    prompt = build_prompt(oversized_name, "Tabby", [{"hex": "#FFFFFF", "ratio": 1.0}])
+
+    truncated_name = oversized_name[: gc.CAT_NAME_MAX_LENGTH]
+    assert truncated_name in prompt
+    assert oversized_name not in prompt
+
+
+def test_build_prompt_caps_personality_length():
+    """A personality longer than PERSONALITY_MAX_LENGTH is truncated in the prompt."""
+    oversized_personality = "B" * (gc.PERSONALITY_MAX_LENGTH + 500)
+    prompt = build_prompt(
+        "Sir Pounce",
+        "Tabby",
+        [{"hex": "#FFFFFF", "ratio": 1.0}],
+        personality=oversized_personality,
+    )
+
+    truncated_personality = oversized_personality[: gc.PERSONALITY_MAX_LENGTH]
+    assert truncated_personality in prompt
+    assert oversized_personality not in prompt
+
+
+def test_sanitize_card_strips_control_chars_and_caps_length():
+    """sanitize_card strips control chars and length-caps free-text fields,
+    leaving numeric/structural fields untouched."""
+    control_chars = "\x00\x01\x1f\x7f"
+
+    oversized_name = control_chars + ("N" * (gc.NAME_MAX_LENGTH + 50))
+    oversized_lore = control_chars + ("L" * (gc.LORE_MAX_LENGTH + 50))
+    oversized_image_prompt = control_chars + ("I" * (gc.IMAGE_PROMPT_MAX_LENGTH + 50))
+    oversized_ability_name = control_chars + ("Q" * (gc.ABILITY_NAME_MAX_LENGTH + 50))
+    oversized_ability_description = control_chars + (
+        "D" * (gc.ABILITY_DESCRIPTION_MAX_LENGTH + 50)
+    )
+
+    card = _valid_card(
+        name=oversized_name,
+        lore=oversized_lore,
+        image_prompt=oversized_image_prompt,
+        abilities=[
+            _valid_ability(
+                name=oversized_ability_name,
+                description=oversized_ability_description,
+                dmg=42,
+                type="AOE",
+                is_special=True,
+            ),
+        ],
+    )
+
+    result = sanitize_card(card)
+
+    for control_char in control_chars:
+        assert control_char not in result["name"]
+        assert control_char not in result["lore"]
+        assert control_char not in result["image_prompt"]
+        assert control_char not in result["abilities"][0]["name"]
+        assert control_char not in result["abilities"][0]["description"]
+
+    assert len(result["name"]) == gc.NAME_MAX_LENGTH
+    assert len(result["lore"]) == gc.LORE_MAX_LENGTH
+    assert len(result["image_prompt"]) == gc.IMAGE_PROMPT_MAX_LENGTH
+    assert len(result["abilities"][0]["name"]) == gc.ABILITY_NAME_MAX_LENGTH
+    assert (
+        len(result["abilities"][0]["description"])
+        == gc.ABILITY_DESCRIPTION_MAX_LENGTH
+    )
+
+    # Numeric/structural fields must be unchanged.
+    assert result["max_hp"] == card["max_hp"]
+    assert result["dmg"] == card["dmg"]
+    assert result["defence"] == card["defence"]
+    assert result["spd"] == card["spd"]
+    assert result["max_mana"] == card["max_mana"]
+    assert result["class"] == card["class"]
+    assert result["abilities"][0]["dmg"] == 42
+    assert result["abilities"][0]["type"] == "AOE"
+    assert result["abilities"][0]["is_special"] is True
+    assert result["abilities"][0]["cooldown"] == card["abilities"][0]["cooldown"]
+    assert result["abilities"][0]["mana_cost"] == card["abilities"][0]["mana_cost"]
+
+
+def test_sanitize_card_does_not_mutate_input():
+    """sanitize_card returns a new dict; the original card dict is unchanged."""
+    original = _valid_card(
+        name="\x00Sir Pounce",
+        abilities=[_valid_ability(name="\x01Claw")],
+    )
+    # Deep-ish snapshot of the original values to compare against after the call.
+    original_name = original["name"]
+    original_ability_name = original["abilities"][0]["name"]
+
+    sanitize_card(original)
+
+    assert original["name"] == original_name
+    assert original["abilities"][0]["name"] == original_ability_name
+    assert original["name"] == "\x00Sir Pounce"
+    assert original["abilities"][0]["name"] == "\x01Claw"
+
+
+def test_generate_card_end_to_end_sanitizes_before_validate(monkeypatch):
+    """generate_card wires sanitize_card in before validate_card: control-char
+    polluted free text returned by the (mocked) Gemini call comes back clean."""
+    monkeypatch.setattr(gc, "GEMINI_API_KEY", "test-key")
+
+    polluted_card = _valid_card(
+        name="\x00\x01Sir Pounce\x7f",
+        lore="\x1fA brave\x00 and fluffy warrior.",
+        image_prompt="\x01an orange tabby warrior cat\x7f",
+        abilities=[
+            _valid_ability("\x00Claw\x01"),
+            _valid_ability("Bite"),
+            _valid_ability("Pounce"),
+            _valid_ability(
+                "\x7fNine Fury",
+                is_special=True,
+                effect="STUN",
+                description="\x00Unleash nine lives of fury\x01",
+            ),
+        ],
+    )
+
+    def _fake_post(url, **kwargs):
+        return _FakeResponse(polluted_card)
+
+    monkeypatch.setattr(gc.httpx, "post", _fake_post)
+
+    result = generate_card(
+        cat_name="Sir Pounce",
+        breed="Tabby",
+        colors=[{"hex": "#C0A080", "ratio": 0.6}],
+        personality="grumpy but loyal",
+    )
+
+    control_chars = "\x00\x01\x1f\x7f"
+    for control_char in control_chars:
+        assert control_char not in result["name"]
+        assert control_char not in result["lore"]
+        assert control_char not in result["image_prompt"]
+        for ability in result["abilities"]:
+            assert control_char not in ability["name"]
+            assert control_char not in ability["description"]
+
+    assert len(result["name"]) <= gc.NAME_MAX_LENGTH
+    assert len(result["lore"]) <= gc.LORE_MAX_LENGTH
+    assert len(result["image_prompt"]) <= gc.IMAGE_PROMPT_MAX_LENGTH
+    for ability in result["abilities"]:
+        assert len(ability["name"]) <= gc.ABILITY_NAME_MAX_LENGTH
+        assert len(ability["description"]) <= gc.ABILITY_DESCRIPTION_MAX_LENGTH
+
+    # Result must still be a valid card (sanitize happens before validate).
+    assert validate_card(result) == []

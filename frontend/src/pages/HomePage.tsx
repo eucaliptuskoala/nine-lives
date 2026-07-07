@@ -57,7 +57,7 @@ function HomePage() {
   if (authLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center px-4">
-        <p role="status" className="retro text-xs text-gray-400">
+        <p role="status" className="retro text-xs text-text-secondary">
           Loading...
         </p>
       </div>
@@ -72,14 +72,14 @@ function HomePage() {
         {!user ? (
           // ---- Logged out ----
           <div className="flex flex-col items-center gap-6">
-            <p className="text-gray-500">
+            <p className="text-text-secondary">
               Digitize your cat, battle through the arena, and see how many of
               its nine lives you can spend.
             </p>
             <Button
               type="button"
               onClick={() => navigate("/login")}
-              className="h-auto bg-indigo-600 px-4 py-2 text-[10px] text-white"
+              className="h-auto bg-accent hover:bg-accent/90 px-4 py-2 text-[10px] text-app"
             >
               Sign In
             </Button>
@@ -87,7 +87,7 @@ function HomePage() {
         ) : (
           // ---- Logged in ----
           <div className="flex flex-col items-center gap-6">
-            <p className="text-gray-500">
+            <p className="text-text-secondary">
               Welcome back. Start a new game, continue an ongoing run, or visit
               the memorial for cats that have spent all nine lives.
             </p>
@@ -97,7 +97,7 @@ function HomePage() {
                 <Button
                   type="button"
                   onClick={() => navigate(`/battle/${activeRunId}`)}
-                  className="h-auto bg-emerald-600 px-4 py-2 text-[10px] text-white"
+                  className="h-auto bg-accent hover:bg-accent/90 px-4 py-2 text-[10px] text-app"
                 >
                   Continue
                 </Button>
@@ -106,7 +106,7 @@ function HomePage() {
               <Button
                 type="button"
                 onClick={() => navigate("/digitize")}
-                className="h-auto bg-indigo-600 px-4 py-2 text-[10px] text-white"
+                className="h-auto bg-accent hover:bg-accent/90 px-4 py-2 text-[10px] text-app"
               >
                 New Game
               </Button>
@@ -114,14 +114,14 @@ function HomePage() {
               <Button
                 type="button"
                 onClick={() => navigate("/memorial")}
-                className="h-auto bg-gray-800 px-4 py-2 text-[10px] text-white"
+                className="h-auto bg-btn hover:bg-btn-hover active:bg-btn-pressed px-4 py-2 text-[10px] text-btn-text"
               >
                 Memorial
               </Button>
             </div>
 
             {runLoading && (
-              <p role="status" className="retro text-[10px] text-gray-400">
+              <p role="status" className="retro text-[10px] text-text-secondary">
                 Checking for an active run...
               </p>
             )}

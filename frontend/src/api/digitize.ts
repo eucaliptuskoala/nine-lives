@@ -1,29 +1,39 @@
 import type { Cat } from "../types/game";
+import { supabase } from "../hooks/useSupabase";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
-/**
- * Parameters accepted by the digitize endpoint alongside the uploaded photo.
- * These map to the backend `/api/digitize` form fields.
- */
+const POLL_INTERVAL_MS = 2000;
+const MAX_WAIT_MS = 300000; // 5 minutes
+const START_TIMEOUT_MS = 30000; // 30s to get a task_id
+
 export interface DigitizeParams {
-  /** The game run this cat belongs to (`game_run_id`). */
   gameRunId: string;
-  /** The authenticated user's id (`user_id`). */
-  userId: string;
-  /** Required cat name (`cat_name`). */
   catName: string;
-  /** Optional free-text personality description (`personality`). */
   personality?: string;
 }
 
 /**
- * Upload a cat photo to the digitize endpoint and return the created {@link Cat}.
- *
- * Digitize is an OPEN mock endpoint — it requires no auth token, so this uses a
- * plain `fetch` (not `authFetch`). The file plus metadata are sent as multipart
- * form data.
+ * Reads the current Supabase access token and returns it as an `Authorization`
+ * header. Intentionally NOT routed through the shared `authFetch` helper — this
+ * module drives its own long-poll loop with its own `AbortController`/timeout
+ * semantics, and `authFetch`'s fixed short timeout and JSON-only parsing are a
+ * poor fit here. Called before the initial POST and again before every status
+ * poll so a token refreshed by supabase-js mid-poll is picked up.
  */
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  const token = session?.access_token;
+  if (!token) {
+    throw new Error("Not authenticated: no active session token");
+  }
+
+  return { Authorization: `Bearer ${token}` };
+}
+
 export async function uploadCatPhoto(
   file: File,
   params: DigitizeParams,
@@ -31,45 +41,90 @@ export async function uploadCatPhoto(
   const form = new FormData();
   form.append("file", file);
   form.append("game_run_id", params.gameRunId);
-  form.append("user_id", params.userId);
   form.append("cat_name", params.catName);
   if (params.personality && params.personality.length > 0) {
     form.append("personality", params.personality);
   }
 
-  // Digitization can be slow (image processing on the backend); allow up to 30s
-  // before aborting and surfacing a friendly timeout message.
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30000);
+  let taskId: string;
 
-  let res: Response;
+  const startController = new AbortController();
+  const startTimer = setTimeout(() => startController.abort(), START_TIMEOUT_MS);
+
   try {
-    res = await fetch(`${API_BASE}/api/digitize`, {
+    const authHeaders = await getAuthHeaders();
+    const startRes = await fetch(`${API_BASE}/api/digitize`, {
       method: "POST",
       body: form,
-      signal: controller.signal,
+      headers: authHeaders,
+      signal: startController.signal,
     });
+
+    if (!startRes.ok) {
+      let message = `Digitization failed (${startRes.status})`;
+      try {
+        const data = await startRes.json();
+        if (data && typeof data.detail === "string") {
+          message = data.detail;
+        }
+      } catch {
+        // keep default message
+      }
+      throw new Error(message);
+    }
+
+    const { task_id } = await startRes.json();
+    taskId = task_id;
   } catch (err) {
-    if (controller.signal.aborted) {
+    if (startController.signal.aborted) {
       throw new Error("Digitization timed out. Please try again.");
     }
     throw err;
   } finally {
-    clearTimeout(timer);
+    clearTimeout(startTimer);
   }
 
-  if (!res.ok) {
-    let message = `Digitization failed (${res.status})`;
+  const deadline = Date.now() + MAX_WAIT_MS;
+
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+
+    // Fetched outside the try/catch below so an auth failure propagates and
+    // aborts the poll instead of being silently retried as a transient
+    // network blip.
+    const pollAuthHeaders = await getAuthHeaders();
+
+    let statusRes: Response;
     try {
-      const data = await res.json();
-      if (data && typeof data.detail === "string") {
-        message = data.detail;
-      }
+      statusRes = await fetch(`${API_BASE}/api/digitize/status/${taskId}`, {
+        headers: pollAuthHeaders,
+      });
     } catch {
-      // Response body wasn't JSON — keep the default message.
+      continue;
     }
-    throw new Error(message);
+
+    if (!statusRes.ok) {
+      continue;
+    }
+
+    let data: { status: string; result?: Cat; error?: string };
+    try {
+      data = await statusRes.json();
+    } catch {
+      continue;
+    }
+
+    if (data.status === "COMPLETED") {
+      if (!data.result) {
+        throw new Error("Digitization completed but no result was returned.");
+      }
+      return data.result;
+    }
+
+    if (data.status === "FAILED") {
+      throw new Error(data.error || "Digitization failed on the server.");
+    }
   }
 
-  return (await res.json()) as Cat;
+  throw new Error("Digitization timed out. Please try again.");
 }

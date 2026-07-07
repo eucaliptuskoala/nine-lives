@@ -164,7 +164,6 @@ describe("DigitizePage", () => {
     expect(uploadCatPhotoMock).toHaveBeenCalledTimes(1);
     expect(uploadCatPhotoMock).toHaveBeenCalledWith(photo, {
       gameRunId: "run-123",
-      userId: "user-1",
       catName: "Mittens",
       personality: "Grumpy but loyal",
     });
@@ -185,7 +184,6 @@ describe("DigitizePage", () => {
     await waitFor(() => expect(uploadCatPhotoMock).toHaveBeenCalledTimes(1));
     expect(uploadCatPhotoMock).toHaveBeenCalledWith(photo, {
       gameRunId: "run-123",
-      userId: "user-1",
       catName: "Mittens",
       personality: undefined,
     });

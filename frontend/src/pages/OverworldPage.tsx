@@ -67,7 +67,7 @@ function OverworldPage() {
   // Solid retro fallback color is always applied; the image layers on top only
   // when one exists.
   const backgroundStyle: React.CSSProperties = {
-    backgroundColor: "#0f172a",
+    backgroundColor: "#1B1A22",
     ...(backgroundUrl
       ? {
           backgroundImage: `url(${backgroundUrl})`,
@@ -87,16 +87,16 @@ function OverworldPage() {
       <div className="absolute inset-0 bg-black/50" aria-hidden="true" />
 
       <div className="relative z-10 flex w-full max-w-sm flex-col items-center gap-8 text-center">
-        <h1 className="retro text-2xl font-bold text-white">Overworld</h1>
+        <h1 className="retro text-2xl font-bold text-text-primary">Overworld</h1>
 
         {loading ? (
-          <p role="status" className="retro text-xs text-gray-300">
+          <p role="status" className="retro text-xs text-text-secondary">
             Loading...
           </p>
         ) : (
           <>
             {error && (
-              <p role="alert" className="retro text-[10px] text-red-300">
+              <p role="alert" className="retro text-[10px] text-hp">
                 {error}
               </p>
             )}
@@ -106,7 +106,7 @@ function OverworldPage() {
                 type="button"
                 onClick={() => runId && navigate(`/battle/${runId}`)}
                 disabled={!runId}
-                className="h-auto bg-red-700 px-4 py-2 text-[10px] text-white"
+                className="h-auto bg-accent hover:bg-accent/90 px-4 py-2 text-[10px] text-app"
               >
                 Next Enemy
               </Button>
@@ -114,7 +114,7 @@ function OverworldPage() {
               <Button
                 type="button"
                 onClick={() => navigate("/memorial")}
-                className="h-auto bg-gray-800 px-4 py-2 text-[10px] text-white"
+                className="h-auto bg-btn hover:bg-btn-hover active:bg-btn-pressed px-4 py-2 text-[10px] text-btn-text"
               >
                 Memorial
               </Button>
@@ -125,7 +125,7 @@ function OverworldPage() {
                 disabled
                 aria-disabled="true"
                 title="Coming soon"
-                className="h-auto bg-gray-700 px-4 py-2 text-[10px] text-white opacity-60"
+                className="h-auto bg-btn px-4 py-2 text-[10px] text-text-disabled opacity-60"
               >
                 Rest (soon)
               </Button>

@@ -48,6 +48,21 @@ pip install -e .
 uvicorn main:app --reload
 ```
 
+## Security Notes
+
+- **`CORS_ORIGINS` in production:** before going live, set `CORS_ORIGINS` (see
+  `backend/.env.example`) to the real deployed frontend origin(s), comma-separated
+  if there are multiple. `backend/main.py` defaults `allow_origins` to
+  `http://localhost:5173` when this is unset, which is dev-only and must not be
+  relied on in a deployed environment. `allow_credentials=True` is enabled, so
+  this origin list must stay scoped to origins you actually trust.
+- **Token revocation after password reset / sign-out:** this is an accepted
+  risk, not a code defect. Supabase access tokens are short-lived, and the
+  backend already performs a live `auth.get_user()` check on every request
+  (not just local JWT signature validation), which is standard JWT behavior.
+  If tighter revocation is needed, shorten the token lifetime in your Supabase
+  Auth settings.
+
 ## License
 
 MIT

@@ -38,7 +38,7 @@ function AppHeader() {
       <Button
         type="button"
         onClick={handleSignOut}
-        className="h-auto bg-gray-800 px-3 py-1.5 text-[10px] text-white"
+        className="h-auto bg-btn hover:bg-btn-hover active:bg-btn-pressed px-3 py-1.5 text-[10px] text-btn-text"
       >
         Sign out
       </Button>

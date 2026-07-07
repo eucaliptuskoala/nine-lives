@@ -96,7 +96,7 @@ def _db_row_to_ability(row: dict) -> Ability:
 # ─── Orchestrator ─────────────────────────────────────────────────────────────
 
 
-async def digitize(
+def digitize(
     image_bytes: bytes,
     content_type: str,
     cat_name: str,

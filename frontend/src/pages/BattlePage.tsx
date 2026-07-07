@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate, useParams } from "react-router-dom";
 import { Phase } from "../types/game";
 import { useGameState } from "../hooks/useGameState";
+import { useAudio } from "../hooks/useAudio";
 import BattleArena from "../components/BattleArena";
 import ActionButtons from "../components/ActionButtons";
 import FarewellScreen from "../components/FarewellScreen";
@@ -15,7 +16,7 @@ function PixelSpinner() {
       {[0, 1, 2].map((i) => (
         <motion.span
           key={i}
-          className="inline-block h-3 w-3 bg-gray-300"
+          className="inline-block h-3 w-3 bg-text-secondary"
           animate={{ opacity: [0.25, 1, 0.25] }}
           transition={{
             duration: 0.9,
@@ -45,6 +46,7 @@ function BattlePage() {
     startBattle,
     submitAction,
   } = useGameState();
+  const { playMoveSound } = useAudio();
 
   // Victory popup: when the backend advances to a new round (enemy defeated),
   // show a dismissible popup. Dismissing it routes the player to the Overworld.
@@ -100,12 +102,12 @@ function BattlePage() {
   // auto-redirect, so show a clear message with a button to the memorial.
   if (runEnded) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white px-6 text-center gap-4">
-        <p className="text-lg text-gray-200">This game has already ended.</p>
+      <div className="flex flex-col items-center justify-center min-h-screen bg-app text-text-primary px-6 text-center gap-4">
+        <p className="text-lg text-text-secondary">This game has already ended.</p>
         <Button
           type="button"
           onClick={() => navigate("/memorial")}
-          className="h-auto bg-purple-700 px-6 py-3 text-xs text-white"
+          className="h-auto bg-btn hover:bg-btn-hover active:bg-btn-pressed px-6 py-3 text-xs text-btn-text"
         >
           Go to Memorial
         </Button>
@@ -117,12 +119,12 @@ function BattlePage() {
   if (!gameState || !cat) {
     if (error) {
       return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white px-6 text-center gap-4">
-          <p role="alert" className="text-red-400">{error}</p>
+        <div className="flex flex-col items-center justify-center min-h-screen bg-app text-text-primary px-6 text-center gap-4">
+          <p role="alert" className="text-hp">{error}</p>
           <Button
             type="button"
             onClick={() => runId && startBattle(runId)}
-            className="h-auto bg-gray-700 px-6 py-3 text-xs text-white"
+            className="h-auto bg-btn hover:bg-btn-hover active:bg-btn-pressed px-6 py-3 text-xs text-btn-text"
           >
             Try Again
           </Button>
@@ -130,9 +132,9 @@ function BattlePage() {
       );
     }
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white gap-4">
+      <div className="flex flex-col items-center justify-center min-h-screen bg-app text-text-primary gap-4">
         <PixelSpinner />
-        <p role="status" className="retro text-xs text-gray-400">
+        <p role="status" className="retro text-xs text-text-secondary">
           Loading...
         </p>
       </div>
@@ -196,7 +198,7 @@ function BattlePage() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.85, y: -12 }}
             transition={{ type: "spring", stiffness: 320, damping: 22 }}
-            className="mb-3 rounded-lg bg-purple-900/70 border-2 border-purple-400 px-4 py-3 text-center text-sm font-medium text-purple-100 shadow-lg shadow-purple-900/40"
+            className="mb-3 rounded-lg bg-accent/25 border-2 border-accent px-4 py-3 text-center text-sm font-medium text-text-primary shadow-lg shadow-accent/20"
           >
             <motion.span
               className="inline-block mr-1"
@@ -225,7 +227,7 @@ function BattlePage() {
             exit={{ opacity: 0 }}
           >
             <motion.div
-              className="retro flex flex-col items-center gap-4 rounded-lg border-2 border-yellow-400 bg-gray-900 px-8 py-6 text-center text-yellow-300 shadow-xl"
+              className="retro flex flex-col items-center gap-4 rounded-lg border-2 border-ultimate bg-panel px-8 py-6 text-center text-ultimate shadow-xl"
               initial={{ scale: 0.5, y: 20 }}
               animate={{ scale: [0.5, 1.15, 1], y: 0 }}
               exit={{ scale: 0.7, opacity: 0 }}
@@ -233,13 +235,13 @@ function BattlePage() {
             >
               <div className="text-2xl font-bold">{"\uD83C\uDF89"}</div>
               <div className="text-sm">Enemy defeated!</div>
-              <div className="text-[10px] text-gray-300">
+              <div className="text-[10px] text-text-secondary">
                 Round {victoryRound} reached.
               </div>
               <Button
                 type="button"
                 onClick={handleVictoryDismiss}
-                className="mt-1 h-auto bg-emerald-600 px-4 py-2 text-[10px] text-white"
+                className="mt-1 h-auto bg-accent hover:bg-accent/90 px-4 py-2 text-[10px] text-app"
               >
                 Continue
               </Button>
@@ -252,9 +254,19 @@ function BattlePage() {
         abilities={cat.abilities}
         cooldowns={gameState.player_ability_cooldowns}
         mana={gameState.player_mana}
-        onAttack={() => submitAction("attack")}
-        onDefend={() => submitAction("defend")}
-        onUseAbility={(abilityId) => submitAction("ability", abilityId)}
+        onAttack={() => {
+          playMoveSound("attack");
+          submitAction("attack");
+        }}
+        onDefend={() => {
+          playMoveSound("defend");
+          submitAction("defend");
+        }}
+        onUseAbility={(abilityId) => {
+          const ability = cat.abilities.find((a) => a.id === abilityId);
+          playMoveSound(ability?.is_special ? "ultimate" : "ability");
+          submitAction("ability", abilityId);
+        }}
         disabled={!canAct}
       />
     </BattleArena>

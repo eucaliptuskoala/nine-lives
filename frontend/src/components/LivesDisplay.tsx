@@ -12,7 +12,7 @@ function LivesDisplay({ lives }: LivesDisplayProps) {
       {Array.from({ length: TOTAL_LIVES }).map((_, i) => (
         <motion.span
           key={i}
-          className={`text-lg ${i < lives ? "text-red-400" : "text-gray-700"}`}
+          className={`text-lg ${i < lives ? "text-lives" : "text-text-disabled"}`}
           animate={i === lives ? { scale: [1, 1.3, 1] } : {}}
           transition={{ duration: 0.4 }}
         >

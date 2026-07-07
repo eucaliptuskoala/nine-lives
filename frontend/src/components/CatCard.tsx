@@ -19,9 +19,9 @@ interface CatCardProps {
 }
 
 const classColors: Record<Class, string> = {
-  STRENGTH: "text-red-400",
-  AGILITY: "text-green-400",
-  INTELLIGENCE: "text-blue-400",
+  STRENGTH: "text-class-strength",
+  AGILITY: "text-class-agility",
+  INTELLIGENCE: "text-class-intelligence",
 };
 
 function CatCard({
@@ -67,13 +67,13 @@ function CatCard({
 
   return (
     <motion.div animate={controls}>
-      <Card font="normal" className="bg-gray-800/60 border-gray-500 text-white">
+      <Card font="normal" className="bg-panel/60 border-border-ui text-text-primary">
         <div
           className={`flex items-center gap-4 p-4 ${
             flip ? "flex-row-reverse" : ""
           }`}
         >
-          <div className="w-20 h-20 rounded-full bg-gray-700 flex items-center justify-center text-3xl shrink-0 border-2 border-gray-600">
+          <div className="w-20 h-20 rounded-full bg-elevated flex items-center justify-center text-3xl shrink-0 border-2 border-border-ui">
             {"\uD83D\uDC31"}
           </div>
           <div className="flex-1 min-w-0">
@@ -82,7 +82,7 @@ function CatCard({
                 flip ? "justify-end" : ""
               }`}
             >
-              <span className="font-semibold text-white truncate">{name}</span>
+              <span className="font-semibold text-text-primary truncate">{name}</span>
               <span className={`text-xs font-medium ${classColors[classType]}`}>
                 {classType}
               </span>
@@ -93,12 +93,12 @@ function CatCard({
             </div>
             <div className={`flex gap-2 mt-1 ${flip ? "justify-end" : ""}`}>
               {isDefending && (
-                <span className="text-xs text-yellow-400 font-medium">
+                <span className="text-xs text-defend font-medium">
                   {"\uD83D\uDEE1\uFE0F"} Defending
                 </span>
               )}
               {shield !== undefined && shield > 0 && (
-                <span className="text-xs text-cyan-400 font-medium">
+                <span className="text-xs text-shield font-medium">
                   {"\uD83D\uDEE1\uFE0F"} Shield {shield}
                 </span>
               )}

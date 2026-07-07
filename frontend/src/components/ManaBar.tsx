@@ -11,7 +11,7 @@ function ManaBar({ current, max }: ManaBarProps) {
 
   return (
     <div className="w-full">
-      <div className="flex justify-between text-xs text-gray-400 mb-1">
+      <div className="flex justify-between text-xs text-text-secondary mb-1">
         <span>MP</span>
         <motion.span
           key={current}
@@ -25,7 +25,7 @@ function ManaBar({ current, max }: ManaBarProps) {
       <Progress
         variant="retro"
         value={ratio * 100}
-        progressBg="bg-blue-500"
+        progressBg="bg-mana"
         className="h-2.5"
       />
     </div>

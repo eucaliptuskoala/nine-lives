@@ -101,7 +101,6 @@ function DigitizePage() {
 
       await uploadCatPhoto(file, {
         gameRunId: currentRunId,
-        userId: user.id,
         catName: trimmedName,
         personality: personality.trim() || undefined,
       });
@@ -122,7 +121,7 @@ function DigitizePage() {
       <div className="w-full max-w-md flex flex-col gap-6">
         <div className="flex flex-col items-center gap-2 text-center">
           <h1 className="retro text-2xl font-bold">Digitize Your Cat</h1>
-          <p className="text-gray-500">
+          <p className="text-text-secondary">
             Upload a photo and give your cat a name to enter the arena.
           </p>
         </div>
@@ -142,7 +141,7 @@ function DigitizePage() {
               font="normal"
             />
             {nameTooLong && (
-              <span className="text-sm text-red-600">
+              <span className="text-sm text-hp">
                 Name must be {MAX_NAME_LENGTH} characters or fewer.
               </span>
             )}
@@ -156,15 +155,15 @@ function DigitizePage() {
               accept="image/jpeg,image/png,image/webp"
               onChange={handleFileChange}
               disabled={isProcessing}
-              className="rounded-md border border-gray-300 px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-1 file:text-indigo-700 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-md border border-border-ui px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-elevated file:px-3 file:py-1 file:text-text-primary focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:cursor-not-allowed disabled:opacity-60"
             />
             {fileError && (
-              <span role="alert" className="text-sm text-red-600">
+              <span role="alert" className="text-sm text-hp">
                 {fileError}
               </span>
             )}
             {file && !fileError && (
-              <span className="text-sm text-gray-500">
+              <span className="text-sm text-text-secondary">
                 {file.name} ({formatFileSize(file.size)})
               </span>
             )}
@@ -184,20 +183,20 @@ function DigitizePage() {
             />
             <span
               className={`self-end text-xs ${
-                personalityTooLong ? "text-red-600" : "text-gray-400"
+                personalityTooLong ? "text-hp" : "text-text-secondary"
               }`}
             >
               {personality.length}/{MAX_PERSONALITY_LENGTH}
             </span>
             {personalityTooLong && (
-              <span className="text-sm text-red-600">
+              <span className="text-sm text-hp">
                 Personality must be {MAX_PERSONALITY_LENGTH} characters or fewer.
               </span>
             )}
           </label>
 
           {errorMessage && (
-            <p role="alert" className="text-sm text-red-600">
+            <p role="alert" className="text-sm text-hp">
               {errorMessage}
             </p>
           )}
@@ -205,7 +204,7 @@ function DigitizePage() {
           <Button
             type="submit"
             disabled={!canSubmit || isProcessing}
-            className="mt-2 h-auto bg-indigo-600 px-4 py-2 text-[10px] text-white"
+            className="mt-2 h-auto bg-accent hover:bg-accent/90 px-4 py-2 text-[10px] text-app"
           >
             {isProcessing ? (
               <span className="inline-flex items-center gap-2">
@@ -214,7 +213,7 @@ function DigitizePage() {
                   {[0, 1, 2].map((i) => (
                     <motion.span
                       key={i}
-                      className="inline-block h-1.5 w-1.5 bg-white"
+                      className="inline-block h-1.5 w-1.5 bg-app"
                       animate={{ opacity: [0.2, 1, 0.2] }}
                       transition={{
                         duration: 0.8,

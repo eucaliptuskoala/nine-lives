@@ -100,7 +100,7 @@ function LoginPage() {
       <div className="w-full max-w-sm flex flex-col gap-6">
         <div className="flex flex-col items-center gap-2 text-center">
           <h1 className="retro text-2xl font-bold">Nine Lives</h1>
-          <p className="text-gray-500">
+          <p className="text-text-secondary">
             {isSignup ? "Create an account to get started." : "Sign in to continue."}
           </p>
         </div>
@@ -131,12 +131,12 @@ function LoginPage() {
           </label>
 
           {error && (
-            <p role="alert" className="text-sm text-red-600">
+            <p role="alert" className="text-sm text-hp">
               {error}
             </p>
           )}
           {info && (
-            <p role="status" className="text-sm text-green-600">
+            <p role="status" className="text-sm text-ability">
               {info}
             </p>
           )}
@@ -144,7 +144,7 @@ function LoginPage() {
           <Button
             type="submit"
             disabled={submitting}
-            className="mt-2 h-auto bg-indigo-600 px-4 py-2 text-[10px] text-white"
+            className="mt-2 h-auto bg-accent hover:bg-accent/90 px-4 py-2 text-[10px] text-app"
           >
             {submitting
               ? isSignup
@@ -156,13 +156,13 @@ function LoginPage() {
           </Button>
         </form>
 
-        <p className="text-center text-sm text-gray-500">
+        <p className="text-center text-sm text-text-secondary">
           {isSignup ? "Already have an account?" : "Don't have an account?"}{" "}
           <Button
             type="button"
             variant="link"
             onClick={toggleMode}
-            className="h-auto p-0 align-baseline font-medium text-indigo-600 hover:text-indigo-700 hover:underline"
+            className="h-auto p-0 align-baseline font-medium text-accent hover:text-accent/80 hover:underline"
           >
             {isSignup ? "Sign in" : "Sign up"}
           </Button>

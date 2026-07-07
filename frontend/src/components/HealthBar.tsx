@@ -8,7 +8,7 @@ interface HealthBarProps {
   color?: string;
 }
 
-function HealthBar({ current, max, color = "bg-red-500" }: HealthBarProps) {
+function HealthBar({ current, max, color = "bg-hp" }: HealthBarProps) {
   const ratio = max > 0 ? Math.max(0, Math.min(1, current / max)) : 0;
 
   // Track the previous value so we can flash the bar when it changes: red-ish
@@ -25,7 +25,7 @@ function HealthBar({ current, max, color = "bg-red-500" }: HealthBarProps) {
 
   return (
     <div className="w-full">
-      <div className="flex justify-between text-xs text-gray-400 mb-1">
+      <div className="flex justify-between text-xs text-text-secondary mb-1">
         <span>HP</span>
         <motion.span
           key={current}
@@ -49,7 +49,7 @@ function HealthBar({ current, max, color = "bg-red-500" }: HealthBarProps) {
               key={`flash-${flash}-${current}`}
               aria-hidden="true"
               className={`pointer-events-none absolute inset-0 ${
-                flash === "down" ? "bg-red-400" : "bg-green-400"
+                flash === "down" ? "bg-hp" : "bg-ability"
               }`}
               initial={{ opacity: 0.55 }}
               animate={{ opacity: 0 }}

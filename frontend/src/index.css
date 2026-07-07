@@ -48,27 +48,80 @@
     --radius-2xl: calc(var(--radius) * 1.8);
     --radius-3xl: calc(var(--radius) * 2.2);
     --radius-4xl: calc(var(--radius) * 2.6);
+
+    /* ---- Nine Lives palette (Task 16) ----
+       Centralized color tokens. Tailwind v4 generates matching utilities from
+       each `--color-*` token (e.g. `--color-hp` → `bg-hp` / `text-hp` / etc.).
+       Purely presentational. */
+
+    /* Core / Semantic */
+    --color-app: #1B1A22;            /* App background — rich charcoal */
+    --color-panel: #282734;          /* Panels / cards — dark slate */
+    --color-elevated: #343244;       /* Elevated cards / popups — slate purple */
+    --color-border-ui: #56536A;      /* Borders — dusty lavender gray */
+    --color-text-primary: #F3F1EA;   /* Primary text — warm white */
+    --color-text-secondary: #B8B5C7; /* Secondary text — soft gray */
+    --color-text-disabled: #6F6C7E;  /* Disabled text/buttons — muted gray */
+    /* Note: the primary accent (lavender #8E86C9) is exposed via the existing
+       shadcn `--color-accent: var(--accent)` token above; `--accent` is mapped
+       to #8E86C9 in :root/.dark, so `bg-accent` / `text-accent` already work. */
+
+    /* Standard UI Buttons */
+    --color-btn: #343244;
+    --color-btn-hover: #403E53;
+    --color-btn-pressed: #282734;
+    --color-btn-border: #56536A;
+    --color-btn-text: #F3F1EA;
+
+    /* Battle Buttons (base / hover) */
+    --color-attack: #D96C6C;
+    --color-attack-hover: #E57C7C;
+    --color-defend: #6F8FBF;
+    --color-defend-hover: #80A0CF;
+    --color-ability: #67B38C;
+    --color-ability-hover: #78C59B;
+    --color-ultimate: #D9B15F;
+    --color-ultimate-hover: #E7C56F;
+
+    /* Resources */
+    --color-hp: #D46A6A;
+    --color-mana: #6D9ED8;
+    --color-shield: #9FA9B8;
+    --color-lives: #F0C97A;
+
+    /* Character Classes */
+    --color-class-strength: #C97A62;
+    --color-class-agility: #77B98A;
+    --color-class-intelligence: #8B82D8;
+
+    /* Ability Rarity */
+    --color-rarity-normal: #BDBBC9;
+    --color-rarity-special: #D9B15F;
 }
 
 :root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
+    /* Base surfaces mapped to the Nine Lives palette (Task 16.1). The app
+       renders dark (`<html class="dark">`); these values are duplicated in
+       `.dark` below so the charcoal background + warm-white text apply
+       regardless of which selector wins. Hex is valid inside these vars. */
+    --background: #1B1A22;          /* app charcoal */
+    --foreground: #F3F1EA;          /* warm white */
+    --card: #282734;                /* panel */
+    --card-foreground: #F3F1EA;
+    --popover: #343244;             /* elevated */
+    --popover-foreground: #F3F1EA;
+    --primary: #8E86C9;             /* lavender accent */
+    --primary-foreground: #1B1A22;
+    --secondary: #343244;
+    --secondary-foreground: #F3F1EA;
+    --muted: #282734;
+    --muted-foreground: #B8B5C7;    /* secondary text */
+    --accent: #8E86C9;              /* lavender accent */
+    --accent-foreground: #1B1A22;
     --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
+    --border: #56536A;              /* dusty lavender gray */
+    --input: #56536A;
+    --ring: #8E86C9;
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -86,24 +139,25 @@
 }
 
 .dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
+    /* Nine Lives palette (Task 16.1) — the app's active theme. */
+    --background: #1B1A22;          /* app charcoal */
+    --foreground: #F3F1EA;          /* warm white */
+    --card: #282734;                /* panel */
+    --card-foreground: #F3F1EA;
+    --popover: #343244;             /* elevated */
+    --popover-foreground: #F3F1EA;
+    --primary: #8E86C9;             /* lavender accent */
+    --primary-foreground: #1B1A22;
+    --secondary: #343244;
+    --secondary-foreground: #F3F1EA;
+    --muted: #282734;
+    --muted-foreground: #B8B5C7;    /* secondary text */
+    --accent: #8E86C9;              /* lavender accent */
+    --accent-foreground: #1B1A22;
     --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
+    --border: #56536A;              /* dusty lavender gray */
+    --input: #56536A;
+    --ring: #8E86C9;
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
