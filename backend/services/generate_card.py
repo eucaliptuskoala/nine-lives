@@ -159,6 +159,14 @@ def validate_card(card: dict) -> list[str]:
     valid_effects = {None, "STUN", "SILENCE", "BLEED", "BURN", "BLIND", "SLOW", "TAUNT", "REGEN"}
 
     for a in abilities:
+        # `ability.dmg` is NOT NULL (and dmg >= 0) at the DB layer. Gemini has
+        # been observed to return `null` for non-damaging abilities (e.g. a
+        # SHIELD ability with no dmg component), which would otherwise slip
+        # past validation and fail as a raw DB constraint violation on
+        # insert. Require an explicit non-negative int here instead.
+        ability_dmg = a.get("dmg")
+        if not isinstance(ability_dmg, int) or isinstance(ability_dmg, bool) or ability_dmg < 0:
+            errors.append(f"Invalid or missing dmg for ability '{a.get('name')}': {ability_dmg}")
         if a.get("type") not in valid_types:
             errors.append(f"Invalid ability type for '{a.get('name')}': {a.get('type')}")
         if a.get("effect") not in valid_effects:
@@ -179,11 +187,15 @@ def sanitize_card(card: dict) -> dict:
     """Strip control characters and length-cap Gemini-returned free-text fields.
 
     Returns a NEW dict (does not mutate `card` in place) so callers that hold
-    a reference to the raw parsed JSON are unaffected. Only free-text fields
-    are touched; numeric/structural fields (`class`, `max_hp`, `dmg`,
-    `defence`, `spd`, `max_mana`, and each ability's `dmg`/`type`/`effect`/
-    `cooldown`/`mana_cost`/`is_special`) are left completely untouched and are
-    still validated by `validate_card` (BUG 2 fix — see design.md Property 2).
+    a reference to the raw parsed JSON are unaffected. Free-text fields are
+    length-capped/control-char-stripped; numeric/structural fields (`class`,
+    `max_hp`, `dmg`, `defence`, `spd`, `max_mana`, and each ability's
+    `type`/`effect`/`cooldown`/`mana_cost`/`is_special`) are left completely
+    untouched and are still validated by `validate_card` (BUG 2 fix — see
+    design.md Property 2). The one exception is each ability's `dmg`: a
+    `null`/missing value is coerced to `0` (a legitimate "no damage" value
+    for e.g. a SHIELD ability), since `ability.dmg` is NOT NULL at the DB
+    layer and Gemini has been observed to omit it for non-damaging abilities.
     """
     sanitized = dict(card)
 
@@ -212,6 +224,17 @@ def sanitize_card(card: dict) -> dict:
                 new_ability["description"] = _sanitize_text(
                     new_ability["description"], ABILITY_DESCRIPTION_MAX_LENGTH
                 )
+            # `ability.dmg` is NOT NULL at the DB layer. Gemini sometimes
+            # returns `null`/omits `dmg` for non-damaging abilities (e.g. a
+            # SHIELD ability), which is a reasonable "no damage" intent but
+            # would otherwise fail as a raw DB constraint violation on
+            # insert (rather than a clean validation error). Coerce it to 0
+            # here so a legitimately non-damaging ability isn't rejected;
+            # `validate_card` still flags any other invalid (e.g. negative
+            # or non-numeric) dmg value.
+            dmg_value = new_ability.get("dmg")
+            if dmg_value is None:
+                new_ability["dmg"] = 0
             sanitized_abilities.append(new_ability)
         sanitized["abilities"] = sanitized_abilities
 

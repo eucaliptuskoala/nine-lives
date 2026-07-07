@@ -382,6 +382,108 @@ def test_sanitize_card_strips_control_chars_and_caps_length():
     assert result["abilities"][0]["mana_cost"] == card["abilities"][0]["mana_cost"]
 
 
+def test_sanitize_card_coerces_null_ability_dmg_to_zero():
+    """A SHIELD/HEAL-style ability with `dmg: None` (a real Gemini response
+    shape observed in production — see the '23502 null value in column dmg'
+    DB error this guards against) is coerced to `dmg: 0` by sanitize_card,
+    so it doesn't fail as a raw NOT NULL constraint violation on insert."""
+    card = _valid_card(
+        abilities=[
+            _valid_ability("Claw"),
+            _valid_ability("Bite"),
+            _valid_ability("Night Vision", dmg=None, type="SHIELD"),
+            _valid_ability("Nine Fury", is_special=True, effect="STUN"),
+        ]
+    )
+
+    result = sanitize_card(card)
+
+    night_vision = next(a for a in result["abilities"] if a["name"] == "Night Vision")
+    assert night_vision["dmg"] == 0
+    assert validate_card(result) == []
+
+
+def test_sanitize_card_leaves_missing_ability_dmg_key_as_zero():
+    """An ability dict that omits the `dmg` key entirely (not just `None`) is
+    also coerced to `dmg: 0`."""
+    ability_without_dmg = _valid_ability("Night Vision", type="SHIELD")
+    del ability_without_dmg["dmg"]
+
+    card = _valid_card(
+        abilities=[
+            _valid_ability("Claw"),
+            _valid_ability("Bite"),
+            ability_without_dmg,
+            _valid_ability("Nine Fury", is_special=True, effect="STUN"),
+        ]
+    )
+
+    result = sanitize_card(card)
+
+    night_vision = next(a for a in result["abilities"] if a["name"] == "Night Vision")
+    assert night_vision["dmg"] == 0
+    assert validate_card(result) == []
+
+
+def test_validate_card_flags_null_ability_dmg_when_not_sanitized():
+    """Without sanitize_card's coercion, a null ability dmg is caught by
+    validate_card (rather than silently reaching the DB insert)."""
+    card = _valid_card(
+        abilities=[
+            _valid_ability("Claw"),
+            _valid_ability("Bite"),
+            _valid_ability("Night Vision", dmg=None, type="SHIELD"),
+            _valid_ability("Nine Fury", is_special=True, effect="STUN"),
+        ]
+    )
+
+    errors = validate_card(card)
+    assert any("dmg" in e and "Night Vision" in e for e in errors)
+
+
+def test_validate_card_flags_negative_ability_dmg():
+    """A negative ability dmg is still rejected (sanitize_card only coerces
+    None/missing, not out-of-range values)."""
+    card = _valid_card(
+        abilities=[
+            _valid_ability("Claw"),
+            _valid_ability("Bite"),
+            _valid_ability("Bad Ability", dmg=-5),
+            _valid_ability("Nine Fury", is_special=True, effect="STUN"),
+        ]
+    )
+
+    errors = validate_card(card)
+    assert any("dmg" in e and "Bad Ability" in e for e in errors)
+
+
+def test_generate_card_end_to_end_with_null_ability_dmg(monkeypatch):
+    """generate_card succeeds end-to-end when the mocked Gemini response
+    includes a SHIELD ability with `dmg: None`, mirroring the production
+    payload that previously caused a DB NOT NULL violation on insert."""
+    monkeypatch.setattr(gc, "GEMINI_API_KEY", "test-key")
+
+    card_with_null_dmg = _valid_card(
+        abilities=[
+            _valid_ability("Claw"),
+            _valid_ability("Bite"),
+            _valid_ability("Night Vision", dmg=None, type="SHIELD"),
+            _valid_ability("Nine Fury", is_special=True, effect="STUN"),
+        ]
+    )
+    monkeypatch.setattr(gc, "_get_client", lambda: _FakeClient(card_with_null_dmg))
+
+    result = generate_card(
+        cat_name="Sir Pounce",
+        breed="Tabby",
+        colors=[{"hex": "#C0A080", "ratio": 0.6}],
+    )
+
+    night_vision = next(a for a in result["abilities"] if a["name"] == "Night Vision")
+    assert night_vision["dmg"] == 0
+    assert validate_card(result) == []
+
+
 def test_sanitize_card_does_not_mutate_input():
     """sanitize_card returns a new dict; the original card dict is unchanged."""
     original = _valid_card(
