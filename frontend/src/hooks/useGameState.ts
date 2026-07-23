@@ -52,12 +52,6 @@ export function useGameState(): UseGameStateReturn {
   const [runEnded, setRunEnded] = useState(false);
   const [events, setEvents] = useState<string[]>([]);
 
-  // Centralized recovery for the two special Battle API failure modes:
-  //  - 401: the session expired mid-battle. Persist the run so the user can be
-  //    returned to it after re-authenticating, and flag `sessionExpired`.
-  //  - 409: the run has already ended. Flag `runEnded` so the UI can offer
-  //    navigation to the memorial.
-  // Everything else falls through to the generic, retry-friendly error message.
   const handleError = useCallback((err: unknown, id: string | null) => {
     if (err instanceof ApiError && err.status === 401) {
       if (id) sessionStorage.setItem(PENDING_RUN_KEY, id);
@@ -95,8 +89,6 @@ export function useGameState(): UseGameStateReturn {
 
   const submitAction = useCallback(
     async (action: BattleAction, abilityId?: string) => {
-      // Guard against concurrent submissions while a request is in flight, and
-      // against acting before a battle has been started.
       if (isLoading || !runId) return;
 
       setIsLoading(true);
@@ -115,8 +107,6 @@ export function useGameState(): UseGameStateReturn {
         setGameOver(res.game_over);
         setEvents(res.events);
       } catch (err) {
-        // On failure, leave gameState untouched so buttons can re-enable and
-        // the player can retry the action. Special-case 401/409 recovery.
         handleError(err, runId);
       } finally {
         setIsLoading(false);

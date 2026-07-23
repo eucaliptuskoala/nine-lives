@@ -16,7 +16,6 @@ import ActionButtons from "../components/ActionButtons";
 import FarewellScreen from "../components/FarewellScreen";
 import { Button } from "@/components/ui/8bit/button";
 
-/** Retro loading indicator: three pixel blocks pulsing in sequence. */
 function PixelSpinner() {
   return (
     <div className="flex items-center justify-center gap-1.5" aria-hidden="true">
@@ -74,23 +73,15 @@ function BattlePage() {
     [cat, playMoveSound, submitAction],
   );
 
-  // Victory popup: when the backend advances to a new round (enemy defeated),
-  // show a dismissible popup. Dismissing it routes the player to the Overworld.
-  // This is a pure frontend navigation gate — no combat logic is involved.
   const [victoryRound, setVictoryRound] = useState<number | null>(null);
   const prevRoundRef = useRef<number | null>(null);
 
-  // Kick off (or resume) the battle on mount. `start` is idempotent on the
-  // backend, so a page refresh restores the persisted state.
   useEffect(() => {
     if (runId) {
       startBattle(runId);
     }
   }, [runId, startBattle]);
 
-  // Detect an increase in the current round (enemy defeated) and raise the
-  // dismissible victory popup. The backend has already advanced the round and
-  // generated the next enemy in the same response.
   const currentRound = gameState?.current_round ?? null;
   useEffect(() => {
     if (currentRound == null) return;
@@ -101,23 +92,18 @@ function BattlePage() {
     }
   }, [currentRound]);
 
-  // Dismissing the victory popup routes to the Overworld hub.
   const handleVictoryDismiss = () => {
     setVictoryRound(null);
     navigate("/overworld");
   };
 
-  // Session expired mid-battle (401): the hook has already persisted the run to
-  // session storage. Redirect to login, passing the battle path so LoginPage's
-  // post-login redirect returns the user to their battle.
+  // Session expired mid-battle (401) — redirect to login.
   useEffect(() => {
     if (sessionExpired) {
       navigate("/login", { state: { from: `/battle/${runId}` } });
     }
   }, [sessionExpired, navigate, runId]);
 
-  // Run already ended (409): the spec says to OFFER navigation rather than
-  // auto-redirect, so show a clear message with a button to the memorial.
   if (runEnded) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-app text-text-primary px-6 text-center gap-4">
@@ -133,7 +119,6 @@ function BattlePage() {
     );
   }
 
-  // Loading state: no state yet and no error to show.
   if (!gameState || !cat) {
     if (error) {
       return (
@@ -159,7 +144,6 @@ function BattlePage() {
     );
   }
 
-  // Game over is handled via navigation; render a farewell in the meantime.
   if (gameOver) {
     return (
       <FarewellScreen
@@ -172,8 +156,6 @@ function BattlePage() {
   const isPlayerTurn = gameState.phase === Phase.PLAYER_TURN;
   const canAct = isPlayerTurn && !isLoading;
 
-  // Derive the status/turn-log text from the events returned by the API, with
-  // sensible fallbacks for loading and idle states.
   const latestEvent = events.length > 0 ? events[events.length - 1] : null;
   const statusText = error
     ? error
@@ -181,9 +163,6 @@ function BattlePage() {
     ? "Resolving turn..."
     : latestEvent ?? "Your turn!";
 
-  // Display-only derivations (Requirements 3.4, 3.5, 4.1, 4.2, 5.1, 5.8, 5.9):
-  // pure projections of data already present on `cat`/`gameState`, no new API
-  // calls or type changes.
   const playerStatPanel = getPlayerStatFields(cat);
   const enemyStatPanel = getEnemyStatFields(gameState.enemy);
   const enemyAbilityList = toEnemyAbilityList(gameState.enemy);

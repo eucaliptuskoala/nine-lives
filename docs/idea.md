@@ -49,7 +49,7 @@ A web application where the user takes a photo of their cat — real or from the
 | Styling | Tailwind CSS |
 | Backend | Python (FastAPI) |
 | ML — breed classification | HuggingFace Inference API |
-| LLM — card generation | Anthropic Claude API (claude-haiku for speed) |
+| LLM — card generation | Google Gemini 2.5 Flash |
 | Image generation | Gemini 2.5 Flash |
 | Storage | Supabase (Postgres + Auth + Storage) |
 | Deployment | Vercel (frontend) + Render (backend) |

@@ -1,21 +1,5 @@
 """
 Data Router — /api (game-runs, memorial cats, personal notes)
-
-Mediates all non-battle, non-digitize database access for the frontend. These
-endpoints replace what were previously direct Supabase reads/writes from
-frontend pages/hooks. Every endpoint requires a valid Supabase JWT in the
-`Authorization` header (enforced by the `get_current_user` dependency → 401 on
-missing/invalid) and enforces ownership against the authenticated user in this
-API layer. RLS remains enabled as a defense-in-depth backstop.
-
-The backend uses the Supabase service key (bypasses RLS) for the actual queries.
-
-Endpoints:
-    POST  /api/game-runs          — create a new game run (status DIGITIZING)
-    GET   /api/cats/memorial      — list the authenticated user's MEMORIAL cats
-    PATCH /api/cats/{cat_id}/note — update a cat's personal note (owner only)
-
-Related: Requirements 1.3, 22.1, 23.1, 23.2, 23.3, 23.4, 24.1, 24.3.
 """
 
 import threading
@@ -39,7 +23,7 @@ from services.supabase_client import get_supabase_client
 
 router = APIRouter(tags=["data"])
 
-# Maximum allowed length for a personal note (Requirement 23.4).
+# Maximum allowed length for a personal note.
 MAX_NOTE_LENGTH = 500
 
 
@@ -65,9 +49,6 @@ def check_rate_limit(
             )
 
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
-
-
 def _load_abilities(supabase, cat_id: str) -> list[dict]:
     """Load the ability rows for a cat. Raises 500 on DB failure."""
     try:
@@ -80,10 +61,7 @@ def _load_abilities(supabase, cat_id: str) -> list[dict]:
 
 
 def _db_row_to_cat_response(cat_row: dict, ability_rows: list[dict]) -> CatResponse:
-    """Build a `CatResponse` from a `cat` row and its abilities.
-
-    Note the DB column `def` maps to `defence` and `class` maps to `class_`.
-    """
+    """Build CatResponse from a `cat` row and its abilities."""
     return CatResponse(
         id=str(cat_row["id"]),
         user_id=str(cat_row["user_id"]),
@@ -110,16 +88,10 @@ def _db_row_to_cat_response(cat_row: dict, ability_rows: list[dict]) -> CatRespo
         abilities=[Ability.from_db_row(r) for r in ability_rows],
     )
 
-
 # ─── Endpoints ──────────────────────────────────────────────────────────────────
-
-
 @router.post("/game-runs", response_model=CreateGameRunResponse)
 async def create_game_run(user: CurrentUser) -> CreateGameRunResponse:
-    """Create a new game run for the authenticated user (Req 1.3, 24.3).
-
-    The run starts in DIGITIZING with no cat assigned and no persisted state.
-    """
+    """Create a new game run for the authenticated user."""
     check_rate_limit(user.user_id)
     supabase = get_supabase_client()
 
@@ -149,14 +121,7 @@ async def create_game_run(user: CurrentUser) -> CreateGameRunResponse:
 
 @router.get("/game-runs/active", response_model=ActiveGameRunResponse)
 async def get_active_game_run(user: CurrentUser) -> ActiveGameRunResponse:
-    """Return the authenticated user's active game run, if any (Req 24.6, 24.7).
-
-    Selects the user's IN_PROGRESS `game_run` rows (newest first) and returns the
-    most recent one whose linked cat still exists and is ALIVE, along with that
-    cat (abilities attached). Returns `run_id=None`/`cat=None` when there is no
-    such run. Ownership is enforced by filtering on `user_id`; RLS remains as a
-    defense-in-depth backstop.
-    """
+    """Return the authenticated user's active game run, if any."""
     supabase = get_supabase_client()
 
     # Fetch the user's IN_PROGRESS runs, newest first.
@@ -205,11 +170,7 @@ async def get_active_game_run(user: CurrentUser) -> ActiveGameRunResponse:
 
 @router.get("/cats/memorial", response_model=list[CatResponse])
 async def list_memorial_cats(user: CurrentUser) -> list[CatResponse]:
-    """List the authenticated user's MEMORIAL cats, newest death first (Req 22.1, 24.1).
-
-    Ownership is enforced by filtering on `user_id`; each cat's abilities are
-    attached to the returned `CatResponse`.
-    """
+    """List the authenticated user's MEMORIAL cats, newest death first."""
     supabase = get_supabase_client()
 
     try:
@@ -238,12 +199,8 @@ async def list_memorial_cats(user: CurrentUser) -> list[CatResponse]:
 async def update_cat_note(
     cat_id: str, body: UpdateNoteRequest, user: CurrentUser
 ) -> CatResponse:
-    """Update a cat's personal note (Req 23.1–23.4, 24.1).
-
-    Verifies ownership (403 if not owner, 404 if missing) and enforces the
-    ≤500 char limit (400 if exceeded) before updating `personal_note`.
-    """
-    # Validate note length server-side (Req 23.4).
+    """Update a cat's personal note."""
+    # Validate note length server-side.
     if len(body.note) > MAX_NOTE_LENGTH:
         raise HTTPException(
             status_code=400,
@@ -270,7 +227,7 @@ async def update_cat_note(
             detail="You do not own this cat.",
         )
 
-    # Update the personal note (Req 23.2).
+    # Update the personal note.
     try:
         update_result = (
             supabase.table("cat")

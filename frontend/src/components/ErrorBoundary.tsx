@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/8bit/button";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
-  /** Optional custom fallback rendered when a child throws. */
   fallback?: ReactNode;
 }
 
@@ -14,11 +13,8 @@ interface ErrorBoundaryState {
 }
 
 /**
- * React error boundary. Catches render/lifecycle errors thrown by any child in
- * the tree and shows a friendly, dark-theme fallback instead of a blank screen.
- *
- * Usage: wrap each routed page so a crash in one page is contained and offers
- * recovery (reload the app or return home).
+ * React error boundary. Catches render/lifecycle errors and shows a friendly
+ * fallback instead of a blank screen.
  */
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
@@ -27,12 +23,10 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 
   static getDerivedStateFromError(): ErrorBoundaryState {
-    // Render the fallback UI on the next render.
     return { hasError: true };
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
-    // Log for diagnostics; a real app might forward this to an error service.
     console.error("ErrorBoundary caught an error:", error, info.componentStack);
   }
 

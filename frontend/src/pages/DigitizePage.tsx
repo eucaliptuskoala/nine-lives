@@ -16,13 +16,8 @@ const MAX_PERSONALITY_LENGTH = 500;
 type DigitizeStatus = "idle" | "processing" | "error";
 
 /**
- * DigitizePage — collects a cat name, photo, and optional personality
- * description, creates a game run, uploads the photo to the digitize endpoint,
- * and navigates to the battle once the cat has been generated.
- *
- * Auth is obtained via `useAuth()` only; all data flows through the backend API.
- *
- * Related: Requirements 1.1–1.9, 7.1, 26.1, 26.2, 27.1–27.4
+ * Collects a cat name, photo, and optional personality description, creates a
+ * game run, uploads the photo, and navigates to battle once generated.
  */
 function DigitizePage() {
   const navigate = useNavigate();
@@ -36,8 +31,6 @@ function DigitizePage() {
   const [status, setStatus] = useState<DigitizeStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // The run id is created once and reused across retries so a failed attempt
-  // doesn't spawn a second game run (Req 1.9, 26.2).
   const [runId, setRunId] = useState<string | null>(null);
 
   const trimmedName = catName.trim();
@@ -91,7 +84,6 @@ function DigitizePage() {
     setErrorMessage(null);
 
     try {
-      // Reuse an existing run id on retry; only create a new run the first time.
       let currentRunId = runId;
       if (!currentRunId) {
         const run = await createGameRun();

@@ -16,9 +16,6 @@ interface ActionButtonsProps {
   disabled: boolean;
 }
 
-// Battle palette (Task 16.3). A regular ability uses the Ability green; a
-// special/ultimate ability uses the Ultimate gold. These override the 8bit
-// Button's default `bg-foreground` fill while keeping its pixelated frame.
 const ABILITY_CLASS = "bg-ability hover:bg-ability-hover text-text-primary";
 const ULTIMATE_CLASS = "bg-ultimate hover:bg-ultimate-hover text-text-primary";
 
@@ -31,12 +28,7 @@ interface AbilityButtonProps {
 }
 
 /**
- * Renders a single ability button plus its Cooldown_Indicator,
- * hover/focus-driven Ability_Info_Panel, and (touch only) Info_Icon.
- *
- * Extracted from the `abilities.map()` loop so `useInfoDisclosure` and
- * `useIsTouchDevice` can be called once per ability without violating the
- * rules of hooks (Requirements 1, 2, 6).
+ * Single ability button with cooldown indicator and info panel.
  */
 function AbilityButton({
   ability,

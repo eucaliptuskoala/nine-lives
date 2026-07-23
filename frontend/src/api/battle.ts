@@ -1,15 +1,6 @@
 import { authFetch } from "./authFetch";
 import type { GameState, Cat } from "../types/game";
 
-/**
- * Battle API client. Both endpoints REQUIRE a valid Supabase JWT, so every call
- * goes through the shared {@link authFetch} wrapper.
- *
- * These are thin typed wrappers; the consuming hooks/pages are wired up in a
- * later task (5.x).
- */
-
-/** A single battle action submitted by the player. */
 export type BattleAction = "attack" | "defend" | "ability";
 
 /** Request body for `POST /api/battle/action`. */

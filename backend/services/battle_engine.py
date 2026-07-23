@@ -109,23 +109,22 @@ def resolve_player_action(
     new_state = state.model_copy(deep=True)
     events: list[str] = []
 
-    # ── Turn-start bookkeeping (before the action) ──
-    new_state.player_is_defending = False  # Req 10.4
-    new_state.player_mana = regen_mana(new_state.player_mana, new_state.player_max_mana)  # Req 12.1-12.2
-    new_state.player_ability_cooldowns = tick_cooldowns(new_state.player_ability_cooldowns)  # Req 13.1-13.2
+    new_state.player_is_defending = False
+    new_state.player_mana = regen_mana(new_state.player_mana, new_state.player_max_mana)
+    new_state.player_ability_cooldowns = tick_cooldowns(new_state.player_ability_cooldowns)
 
     if action == "attack":
         damage_to_hp, shield_remaining = calculate_damage(
             cat.dmg, new_state.enemy.defence, False, new_state.enemy.shield
         )
         new_state.enemy.shield = shield_remaining
-        new_state.enemy.hp = max(0, new_state.enemy.hp - damage_to_hp)  # Req 9.4, 14.5-14.8, 16.2
+        new_state.enemy.hp = max(0, new_state.enemy.hp - damage_to_hp)
         events.append(
             f"{cat.name} attacks {new_state.enemy.name} for {damage_to_hp} damage."
         )
 
     elif action == "defend":
-        new_state.player_is_defending = True  # Req 10.2
+        new_state.player_is_defending = True
         events.append(f"{cat.name} takes a defensive stance.")
 
     elif action == "ability":
@@ -137,13 +136,13 @@ def resolve_player_action(
             raise InvalidActionError(f"Unknown ability id: {ability_id}")
 
         cooldown = new_state.player_ability_cooldowns.get(ability_id, 0)
-        if new_state.player_mana < ability.mana_cost or cooldown > 0:  # Req 11.2, 11.3, 11.9
+        if new_state.player_mana < ability.mana_cost or cooldown > 0:
             raise InvalidActionError(
                 f"Ability '{ability.name}' unavailable "
                 f"(mana {new_state.player_mana}/{ability.mana_cost}, cooldown {cooldown})"
             )
 
-        # Apply the effect (DMG→enemy, HEAL/SHIELD→player), then pay costs. Req 11.4-11.8
+        # Apply the effect (DMG→enemy, HEAL/SHIELD→player), then pay costs.
         new_state = apply_ability_effect(ability, new_state)
         new_state.player_mana -= ability.mana_cost
         new_state.player_ability_cooldowns[ability_id] = ability.cooldown
@@ -197,9 +196,9 @@ def resolve_enemy_turn(
     events: list[str] = []
     enemy = new_state.enemy
 
-    # ── Turn-start bookkeeping ──
-    enemy.mana = regen_mana(enemy.mana, enemy.max_mana)  # Req 12.3-12.4
-    enemy.ability_cooldowns = tick_cooldowns(enemy.ability_cooldowns)  # Req 13.3
+    # Turn-start bookkeeping
+    enemy.mana = regen_mana(enemy.mana, enemy.max_mana)
+    enemy.ability_cooldowns = tick_cooldowns(enemy.ability_cooldowns)
 
     def _affordable(a: EnemyAbility) -> bool:
         return enemy.ability_cooldowns.get(a.id, 0) == 0 and enemy.mana >= a.mana_cost
@@ -215,7 +214,7 @@ def resolve_enemy_turn(
             chosen = random.choice(regulars)
 
     if chosen is None:
-        # ── Basic attack (Req 15.6) ──
+        # Basic attack
         damage_to_hp, shield_remaining = calculate_damage(
             enemy.atk,
             player_defence,
@@ -223,10 +222,10 @@ def resolve_enemy_turn(
             new_state.player_shield,
         )
         new_state.player_shield = shield_remaining
-        new_state.player_hp = max(0, new_state.player_hp - damage_to_hp)  # Req 16.1
+        new_state.player_hp = max(0, new_state.player_hp - damage_to_hp)
         events.append(f"{enemy.name} attacks for {damage_to_hp} damage.")
     else:
-        # ── Ability usage (Req 15.5): pay costs, then apply effect ──
+        # Ability usage: pay costs, then apply effect
         enemy.mana -= chosen.mana_cost
         enemy.ability_cooldowns[chosen.id] = chosen.cooldown
 
@@ -242,7 +241,7 @@ def resolve_enemy_turn(
             enemy.hp = min(enemy.max_hp, enemy.hp + chosen.dmg)  # mirror of player HEAL
             events.append(f"{enemy.name} uses {chosen.name} and recovers HP.")
         elif chosen.type == AbilityType.SHIELD:
-            enemy.shield += chosen.dmg  # Req 15.5, 16 (mirror of player SHIELD)
+            enemy.shield += chosen.dmg
             events.append(f"{enemy.name} uses {chosen.name} and gains a shield.")
         else:
             events.append(f"{enemy.name} uses {chosen.name}.")
@@ -274,13 +273,13 @@ def resolve_death_and_revival(
 
     if state.lives_remaining > 0:
         new_state = state.model_copy(deep=True)
-        new_state.lives_remaining -= 1  # Req 17.1
-        new_state.player_hp = new_state.player_max_hp  # Req 17.2
-        new_state.player_mana = new_state.player_max_mana  # Req 17.3
-        new_state.player_shield = 0  # Req 17.4
+        new_state.lives_remaining -= 1
+        new_state.player_hp = new_state.player_max_hp
+        new_state.player_mana = new_state.player_max_mana
+        new_state.player_shield = 0
         return new_state, False, True
 
-    # HP == 0 and no lives left → game over (Req 18.1-18.4 handled by router)
+    # HP == 0 and no lives left → game over
     return state, True, False
 
 
@@ -314,11 +313,11 @@ def resolve_round_progression(state: GameState, cat: CreatureBase) -> GameState:
     new_state.current_round = new_round
 
     new_enemy = generate_enemy(new_round)
-    # Req 8.9: prevent immediate ultimate usage by starting the special on cooldown.
+    # Prevent immediate ultimate usage by starting the special on cooldown.
     for ability in new_enemy.abilities:
         if ability.is_special:
             new_enemy.ability_cooldowns[ability.id] = ability.cooldown
     new_state.enemy = new_enemy
-    new_state.phase = Phase.PLAYER_TURN  # Req 19.5
+    new_state.phase = Phase.PLAYER_TURN
 
     return new_state

@@ -5,28 +5,17 @@ import { useAuth } from "../hooks/useSupabase";
 import { getActiveGameRun } from "../api/data";
 
 /**
- * Public landing page served at `/`. It renders OUTSIDE the AuthGuard and never
- * forces a redirect — instead it adapts its content to the current auth state:
- *
- * - Signed out: a tagline + "Sign In" control (→ `/login`).
- * - Signed in: an intro + "New Game" (→ `/digitize`), "Memorial" (→ `/memorial`),
- *   and, when the user has an active run, a "Continue" control (→ `/battle/:runId`).
- *
- * The active-run lookup goes through the backend `GET /api/game-runs/active`
- * endpoint (never a direct DB query).
- *
- * Related: Requirements 25.1, 25.2, 32.1–32.6
+ * Public landing page at `/`. Adapts content based on auth state:
+ * signed out → sign in; signed in → new game, continue, memorial.
  */
 function HomePage() {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
 
-  // Active-run lookup state (only meaningful when the user is signed in).
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [runLoading, setRunLoading] = useState(false);
 
   useEffect(() => {
-    // Only look up an active run for authenticated users.
     if (authLoading || !user) {
       setActiveRunId(null);
       return;
@@ -40,8 +29,6 @@ function HomePage() {
         if (active) setActiveRunId(res.run_id);
       })
       .catch(() => {
-        // On error we simply don't offer "Continue" — the user can still start
-        // a new game.
         if (active) setActiveRunId(null);
       })
       .finally(() => {
@@ -53,7 +40,6 @@ function HomePage() {
     };
   }, [authLoading, user]);
 
-  // Minimal loading state while the initial session lookup resolves.
   if (authLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center px-4">

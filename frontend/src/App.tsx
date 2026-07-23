@@ -11,11 +11,8 @@ import LoginPage from "./pages/LoginPage";
 import HomePage from "./pages/HomePage";
 import OverworldPage from "./pages/OverworldPage";
 
-// The memorial is a secondary route reached only after a run ends, so we split
-// it into its own chunk and load it on demand to keep the initial bundle lean.
 const MemorialPage = lazy(() => import("./pages/MemorialPage"));
 
-/** Retro-themed fallback shown while a lazily-loaded route chunk downloads. */
 function RouteFallback() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-app text-text-primary">

@@ -51,19 +51,12 @@ from models.schemas import (
 
 BUCKET_NAME = "cat-images"
 
-# Setup logger for timing instrumentation
 logger = logging.getLogger(__name__)
-
-
-# ─── Timing utilities ─────────────────────────────────────────────────────────
 
 
 def _log_step(step_name: str, elapsed_sec: float) -> None:
     """Log a pipeline step with its elapsed time."""
     logger.info(f"[DIGITIZE TIMING] {step_name}: {elapsed_sec:.2f}s")
-
-
-# ─── Typed pipeline exceptions ────────────────────────────────────────────────
 
 
 class DigitizeStorageError(Exception):
@@ -78,15 +71,9 @@ class DigitizePersistenceError(Exception):
     """Raised when persisting the cat/abilities/game_run fails (→ HTTP 500)."""
 
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
-
-
 def _content_type_to_ext(content_type: str) -> str:
     """Map an allowed image content type to its file extension."""
     return {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}[content_type]
-
-
-# ─── Orchestrator ─────────────────────────────────────────────────────────────
 
 
 def digitize(
@@ -119,7 +106,7 @@ def digitize(
     pipeline_start = time.perf_counter()
     logger.info(f"[DIGITIZE] Starting pipeline for cat '{cat_name}', run_id={game_run_id}, user_id={user_id}")
 
-    # ── 1. Upload source image to Supabase Storage ───────────────────────────
+    # 1. Upload source image to Supabase Storage
     step_start = time.perf_counter()
     ext = _content_type_to_ext(content_type)
     timestamp = int(time.time() * 1000)
@@ -144,7 +131,7 @@ def digitize(
 
     _log_step("1. Image Upload", time.perf_counter() - step_start)
 
-    # ── 2. Breed classification (real, local ViT) ────────────────────────────
+    # 2. Breed classification
     step_start = time.perf_counter()
     try:
         breed = classify_breed(image_bytes)
@@ -153,7 +140,7 @@ def digitize(
         raise
     _log_step("2. Breed Classification", time.perf_counter() - step_start)
 
-    # ── 3. Colour extraction (real, YOLO + KMeans) ───────────────────────────
+    # 3. Colour extraction
     # colors is a list[dict] of {"hex": str, "ratio": float}.
     step_start = time.perf_counter()
     try:
@@ -163,7 +150,7 @@ def digitize(
         raise
     _log_step("3. Color Extraction", time.perf_counter() - step_start)
 
-    # ── 4. Generate card stats via Gemini ────────────────────────────────────
+    # 4. Generate card stats via Gemini
     step_start = time.perf_counter()
     try:
         card = generate_card(
@@ -178,7 +165,7 @@ def digitize(
 
     _log_step("4. Card Generation (Gemini)", time.perf_counter() - step_start)
 
-    # ── 5. Generate avatar via FLUX.1-schnell (returns a public storage URL) ──
+    # 5. Generate avatar via FLUX.1-schnell
     step_start = time.perf_counter()
     try:
         avatar_url = generate_avatar(card["image_prompt"])
@@ -188,7 +175,7 @@ def digitize(
 
     _log_step("5. Avatar Generation (FLUX)", time.perf_counter() - step_start)
 
-    # ── 6. Insert cat record ─────────────────────────────────────────────────
+    # 6. Insert cat record
     step_start = time.perf_counter()
     cat_data = {
         "user_id": user_id,
@@ -228,7 +215,7 @@ def digitize(
 
     _log_step("6. Cat Record Insert", time.perf_counter() - step_start)
 
-    # ── 7. Insert abilities ──────────────────────────────────────────────────
+    # 7. Insert abilities
     step_start = time.perf_counter()
     abilities_data = [
         {
@@ -258,7 +245,7 @@ def digitize(
 
     _log_step("7. Abilities Insert", time.perf_counter() - step_start)
 
-    # ── 8. Update game_run record ────────────────────────────────────────────
+    # 8. Update game_run record
     step_start = time.perf_counter()
     try:
         supabase.table("game_run").update(
@@ -270,12 +257,12 @@ def digitize(
 
     _log_step("8. Game Run Update", time.perf_counter() - step_start)
 
-    # ── 9. Build and return CatResponse ──────────────────────────────────────
+    # 9. Build and return CatResponse
     abilities = [Ability.from_db_row(row) for row in abilities_result.data]
 
     total_elapsed = time.perf_counter() - pipeline_start
     _log_step("TOTAL PIPELINE", total_elapsed)
-    logger.info(f"[DIGITIZE] Digitization completed successfully for cat '{cat_row['name']}' (ID: {cat_id})")
+    logger.info(f"[DIGITIZE] Completed for cat '{cat_row['name']}' (ID: {cat_id})")
 
     return CatResponse(
         id=cat_id,

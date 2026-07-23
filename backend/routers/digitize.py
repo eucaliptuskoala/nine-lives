@@ -37,14 +37,6 @@ def is_allowed_image_filename(filename: str) -> bool:
     return ext.lower() in ALLOWED_EXTENSIONS
 
 
-# ─── Per-user in-process rate limiter ────────────────────────────────────────
-#
-# NOTE: This limiter is per-process (in-memory). If this API is horizontally
-# scaled (multiple processes/instances), request counts will not be shared
-# across processes and the effective limit will be higher than intended. Move
-# to a shared store (e.g. Redis) if/when the API is deployed with more than
-# one worker/instance.
-
 _rate_limit_lock = threading.Lock()
 _rate_limit_requests: dict[str, deque] = {}
 
@@ -52,7 +44,7 @@ _rate_limit_requests: dict[str, deque] = {}
 def check_rate_limit(
     user_id: str, max_requests: int = 5, window_seconds: float = 60.0
 ) -> None:
-    """Raise 429 if `user_id` has exceeded `max_requests` within `window_seconds`."""
+    """Raise 429 if user has exceeded max_requests within window_seconds."""
     now = time.time()
     with _rate_limit_lock:
         timestamps = _rate_limit_requests.setdefault(user_id, deque())
@@ -114,7 +106,7 @@ async def digitize_cat(
             detail=f"File too large ({size_mb:.1f} MB). Maximum allowed size is 10 MB.",
         )
 
-    # Verify ownership of the game_run BEFORE any pipeline work (Req 2.1-2.4).
+    # Verify ownership of the game_run BEFORE any pipeline work.
     supabase = get_supabase_client()
     load_game_run(supabase, game_run_id, user_id)
 
@@ -136,7 +128,6 @@ async def digitize_cat(
                 user_id=user_id,
                 personality=personality,
             )
-            # Convert CatResponse to dict for JSON serialization.
             cat_dict = cat.model_dump(mode="json")
             update_task(task.id, status=TaskStatus.COMPLETED, result=cat_dict)
         except DigitizeGenerationError as exc:

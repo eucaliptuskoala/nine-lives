@@ -1,14 +1,7 @@
 import { supabase } from "../hooks/useSupabase";
 
-/**
- * Base URL for the backend API. Mirrors the convention used in `digitize.ts`.
- */
 export const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
-/**
- * Error thrown when an authenticated request fails. Carries the HTTP status so
- * callers can branch on auth failures (401), forbidden access (403), etc.
- */
 export class ApiError extends Error {
   readonly status: number;
   readonly body: unknown;
@@ -21,39 +14,17 @@ export class ApiError extends Error {
   }
 }
 
-/**
- * Shared authenticated-fetch wrapper for endpoints that REQUIRE a Supabase JWT.
- *
- * Pulls the access token from the active session via `supabase.auth.getSession()`
- * and sets the `Authorization: Bearer <token>` header on the request. This is the
- * standard way to call the Battle API and the authenticated Data API endpoints.
- *
- * Note: `POST /api/digitize` also requires a JWT (enforced server-side by
- * `CurrentUser` in `routers/digitize.py`), but its client calls its own auth
- * header logic in `digitize.ts` rather than this helper — that module drives a
- * long-poll loop with different timeout/parsing semantics that don't fit
- * `authFetch`'s fixed short timeout and JSON-only response parsing. It is NOT
- * an open/unauthenticated endpoint.
- */
-
-/** Default request timeout (ms) applied when the caller does not specify one. */
+/** Default request timeout (ms). */
 export const DEFAULT_TIMEOUT_MS = 15000;
 
 /** Options accepted by {@link authFetch} on top of the standard `fetch` options. */
 export interface AuthFetchOptions extends RequestInit {
-  /**
-   * Abort the request after this many milliseconds and throw an
-   * {@link ApiError} with status 408. Defaults to {@link DEFAULT_TIMEOUT_MS}.
-   */
-  timeoutMs?: number;
+    timeoutMs?: number;
 }
 
 /**
  * @param path API path beginning with `/` (e.g. `/api/battle/start`).
- * @param options Standard `fetch` options plus an optional `timeoutMs`. The
- *   `Authorization` header is added automatically; a JSON `Content-Type` is
- *   added when a body is present unless the caller already set one or the body
- *   is `FormData`.
+ * @param options Standard `fetch` options plus an optional `timeoutMs`.
  * @returns The parsed JSON response body (or `undefined` for empty `204` responses).
  * @throws {ApiError} When no active session/token exists, when the request times
  *   out (status 408), or when the response is non-ok.

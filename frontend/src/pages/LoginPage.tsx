@@ -7,15 +7,14 @@ import { supabase, useAuth } from "../hooks/useSupabase";
 
 type AuthMode = "signin" | "signup";
 
-/** Shape of the location state set by the AuthGuard (task 3.3) when redirecting here. */
+/** Shape of the location state set by AuthGuard when redirecting here. */
 interface LocationState {
   from?: string;
 }
 
 /**
- * Public login / sign-up page. Uses the Supabase client for email + password
- * authentication only. On success the user is redirected to the page they
- * originally tried to reach (via `location.state.from`), defaulting to `/`.
+ * Public login / sign-up page. On success redirects to the page the user
+ * originally tried to reach (via location.state.from), defaulting to `/`.
  */
 function LoginPage() {
   const navigate = useNavigate();
@@ -29,11 +28,8 @@ function LoginPage() {
   const [info, setInfo] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Where to send the user once authenticated.
   const redirectTo = (location.state as LocationState | null)?.from ?? "/";
 
-  // If the user is already authenticated, don't show the login form — bounce
-  // them to their intended destination.
   useEffect(() => {
     if (!authLoading && user) {
       navigate(redirectTo, { replace: true });
@@ -62,8 +58,6 @@ function LoginPage() {
           setError(signUpError.message);
           return;
         }
-        // When email confirmation is required, Supabase returns a user without
-        // an active session. Let the user know to confirm their email.
         if (data.user && !data.session) {
           setInfo(
             "Check your email to confirm your account, then sign in.",
@@ -71,7 +65,6 @@ function LoginPage() {
           setMode("signin");
           return;
         }
-        // Otherwise a session exists and the auth listener will redirect.
       } else {
         const { error: signInError } =
           await supabase.auth.signInWithPassword({ email, password });
@@ -79,8 +72,7 @@ function LoginPage() {
           setError(signInError.message);
           return;
         }
-        // Successful sign-in updates the auth session; the effect above
-        // handles the redirect.
+        // Successful sign-in triggers the auth listener redirect above.
       }
     } catch (err) {
       setError(
